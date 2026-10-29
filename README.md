@@ -18,6 +18,10 @@ The engine pairs the same destination (including a small explicit city-alias map
 
 Budget estimates are not live availability checks or bookable package quotes. Dates, room occupancy, baggage, transfers, taxes, flight arrival times, and final prices need provider confirmation. Flights and stays are booked separately. The same combinations and assumptions are included in daily emails. Existing searches default to one room; create a new search to select another room count.
 
+Saved searches have optional **Target city** and **Target country** fields. Leave both blank to explore all countries, choose a country to restrict offers to it, or add a city to narrow the destination further. Both fields apply when supplied. Use **Change destination** on an existing search to update or clear them, then choose **Search now**; changing the destination clears the previous results. Manual searches, flight + accommodation combinations, and daily collection all use the same filters.
+
+Country matching uses an explicit country from the offer, a country named in its destination, or the common city/resort aliases in `packages/shared/src/destinations.ts`. Country names support English, Romanian and ISO two-letter codes; city matching ignores case and accents and supports the catalog's aliases. Offers whose country cannot be identified are excluded when a country is selected. The catalog is limited; a missing city/resort can mean fewer results. Existing searches remain unrestricted until a destination is set. Sources still collect their public promotions; these fields filter those promotions and do not add provider-specific live availability searches.
+
 Free-text preferences are saved but there is no language model or automatic natural-language interpretation. Weather and swimming preferences are not yet scored or verified. Nearby airports are not inferred when the source only identifies one specific departure city.
 
 ## Run with Docker

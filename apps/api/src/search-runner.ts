@@ -28,8 +28,11 @@ export async function runSearch(id: string, options: { userId?: string; manual?:
       : `${result.offers.length} family quotes; ${result.discoveries.length} advertised offers; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`;
     await client.query('BEGIN');
     try {
-      const exists = await client.query('SELECT id FROM searches WHERE id=$1 FOR UPDATE', [id]);
+      const exists = await client.query('SELECT id,criteria FROM searches WHERE id=$1 FOR UPDATE', [id]);
       if (!exists.rowCount) throw new SearchRunError('Search was deleted while running', 404);
+      if (JSON.stringify(searchSchema.parse(exists.rows[0].criteria)) !== JSON.stringify(criteria)) {
+        throw new SearchRunError('Search settings changed while running. Please search again.', 409);
+      }
       await client.query('DELETE FROM offers WHERE search_id=$1', [id]);
       await client.query('DELETE FROM discoveries WHERE search_id=$1', [id]);
       for (const offer of result.offers) await client.query('INSERT INTO offers VALUES ($1,$2,$3,$4)',

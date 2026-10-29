@@ -1,9 +1,12 @@
 import { z } from 'zod';
+import { countryCode, matchesDestination } from './destinations.js';
 
 const day = z.iso.date();
 export const searchSchema = z.object({
   name: z.string().trim().min(1).max(100),
   departure: z.string().trim().min(2).max(120),
+  targetCity: z.string().trim().max(120).default(''),
+  targetCountry: z.string().trim().max(120).refine(v => !v || !!countryCode(v), 'Choose a valid destination country').default(''),
   nearbyAirports: z.boolean().default(true),
   earliestDeparture: day,
   latestReturn: day,
@@ -30,6 +33,7 @@ export const offerSchema = z.object({
   externalId: z.string().min(1).max(200),
   title: z.string().min(1).max(300),
   destination: z.string().min(1).max(200),
+  destinationCountry: z.string().trim().min(2).max(120).optional(),
   type: z.enum(['package', 'flight', 'stay']),
   departureDate: day,
   returnDate: day,
@@ -52,6 +56,7 @@ export const discoverySchema = z.object({
   externalId: z.string().min(1).max(200),
   title: z.string().min(1).max(300),
   destination: z.string().min(1).max(200),
+  destinationCountry: z.string().trim().min(2).max(120).optional(),
   type: z.enum(['package', 'flight', 'stay']),
   fromMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   currency: z.enum(['EUR', 'RON', 'USD', 'GBP']),
@@ -80,6 +85,7 @@ export function normalizedCity(value: string) {
 export function matchingDiscoveries(criteria: SearchCriteria, discoveries: Discovery[]) {
   return discoveries.filter(d => {
     if (d.currency !== criteria.currency || !criteria.tripTypes.includes(d.type)) return false;
+    if (!matchesDestination(criteria, d)) return false;
     if (d.type !== 'stay' && d.departureCities.length
       && !d.departureCities.some(city => normalizedCity(city) === normalizedCity(criteria.departure))) return false;
     if (d.nights !== null && (d.nights < criteria.minNights || d.nights > criteria.maxNights)) return false;
@@ -104,6 +110,7 @@ export function matchingOffers(criteria: SearchCriteria, offers: Offer[]): Offer
   return offers.filter(o => {
     const nights = (Date.parse(o.returnDate) - Date.parse(o.departureDate)) / 86400000;
     return o.currency === criteria.currency && criteria.tripTypes.includes(o.type)
+      && matchesDestination(criteria, o)
       && o.departureDate >= criteria.earliestDeparture && o.returnDate <= criteria.latestReturn
       && nights >= criteria.minNights && nights <= criteria.maxNights
       && o.adults === criteria.adults && ages(o.childrenAges) === ages(criteria.childrenAges);

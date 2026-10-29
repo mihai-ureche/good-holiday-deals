@@ -1,0 +1,5 @@
+.destination-help { grid-column: 1 / -1; margin: 0; }
+.destination-editor { margin-top: 16px; font-size: 12px; }
+.destination-editor summary { cursor: pointer; color: #2e5942; }
+.destination-editor form { display: grid; gap: 12px; margin-top: 14px; }
+.destination-editor .text-button { justify-self: start; }

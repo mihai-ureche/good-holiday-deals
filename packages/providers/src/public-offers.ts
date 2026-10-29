@@ -121,7 +121,9 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
     if (!href || !title || !price) return;
     const windows = [...href.matchAll(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})/g)];
     const out = windows[0]; const back = windows[1];
+    const destinationCountry = title.includes(',') ? title.split(',').at(-1)!.trim() : undefined;
     add({ ...price, title: `Flight to ${title}`, destination: title.split(',')[0]!.trim(), type: 'flight', priceUnit: 'person',
+      ...(destinationCountry ? { destinationCountry } : {}),
       journey: back ? 'round-trip' : 'unknown', url: href, departureCities: ['Bucharest'], departureDates: [], nights: null,
       ...(out && back ? { dateWindow: { earliestDeparture: out[1]!, latestDeparture: out[2]!, earliestReturn: back[1]!, latestReturn: back[2]! } } : {}),
       conditions: 'Public city-deal fare per person. Advertised date windows may be flexible; exact dates, baggage, child prices and self-transfer conditions require confirmation.' });

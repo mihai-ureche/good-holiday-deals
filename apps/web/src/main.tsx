@@ -4,7 +4,9 @@ import { money, type Offer, type Discovery, type SavedSearch, type SearchCriteri
 import './style.css';
 import './sources.css';
 import './trips.css';
+import './destinations.css';
 import { TripResults, type ListedTrip } from './TripResults.js';
+import { destinationCountries, countryCode, countryName } from '../../../packages/shared/src/destinations.js';
 
 type Me = { email: string; digestEnabled: boolean; timezone: string; emailConfigured: boolean; providers: string[];
   sources: { id: string; name: string; url: string; mode: string; detail: string }[] };
@@ -106,10 +108,21 @@ function App() {
               <div className="card-top"><span className="tag">{s.active ? 'Watching' : 'Paused'}</span><span>{s.currency}</span></div>
               <h3>{s.name}</h3><p className="from">From {s.departure}{s.nearbyAirports ? ' + nearby airports' : ''}</p>
               <dl><div><dt>Travel window</dt><dd>{s.earliestDeparture} → {s.latestReturn}</dd></div>
+                <div><dt>Destination</dt><dd>{[s.targetCity, s.targetCountry ? countryName(s.targetCountry) : ''].filter(Boolean).join(', ') || 'All countries'}</dd></div>
                 <div><dt>Your stay</dt><dd>{s.minNights === s.maxNights ? s.minNights : `${s.minNights}–${s.maxNights}`} nights</dd></div>
                 <div><dt>Your people</dt><dd>{s.adults} adults{s.childrenAges.length > 0 ? ` · children aged ${s.childrenAges.join(', ')}` : ''} · {s.rooms ?? 1} room(s)</dd></div></dl>
               <p className="preference">{s.preferences || (s.swimming !== 'any' ? `Swimming preference: ${s.swimming.replace('-', ' ')}` : 'Open to possibilities.')}</p>
               <small>{s.lastCheckedAt ? `Checked ${new Date(s.lastCheckedAt).toLocaleString()}. ${s.lastStatus ?? ''}` : 'Ready for your first search.'}</small>
+              <details className="destination-editor"><summary>Change destination</summary>
+                <form onSubmit={async e => {
+                  e.preventDefault(); const form = new FormData(e.currentTarget);
+                  await action(() => api(`/searches/${s.id}`, 'PATCH', {
+                    targetCity: String(form.get('targetCity') ?? '').trim(), targetCountry: String(form.get('targetCountry') ?? ''),
+                  }), 'Destination saved. Choose Search now to find matching offers.');
+                }}><DestinationFields city={s.targetCity} country={s.targetCountry} />
+                  <button className="text-button" disabled={busy}>Save destination</button>
+                </form>
+              </details>
               <button className="primary search-now" disabled={busy || !s.active} onClick={() => void searchNow(s)}>{running === s.id ? 'Searching sources…' : 'Search now ↗'}</button>
               <div className="card-actions"><button className="text-button" disabled={busy} onClick={() => void action(() => api(`/searches/${s.id}`, 'PATCH', { active: !s.active }))}>{s.active ? 'Pause search' : 'Resume search'}</button>
                 <button className="text-button muted" disabled={busy} onClick={() => { if (window.confirm(`Delete “${s.name}”?`)) void action(() => api(`/searches/${s.id}`, 'DELETE'), 'Search deleted.'); }}>Delete</button></div>
@@ -175,6 +188,16 @@ function Auth({ onSuccess }: { onSuccess: () => Promise<void> }) {
   </section>;
 }
 
+function DestinationFields({ city = '', country = '' }: { city?: string; country?: string }) {
+  return <>
+    <label>Target city (optional)<input name="targetCity" defaultValue={city} placeholder="e.g. Rome" maxLength={120} /></label>
+    <label>Target country (optional)<select name="targetCountry" defaultValue={countryCode(country) ?? ''}>
+      <option value="">All countries</option>{destinationCountries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+    </select></label>
+    <p className="filter-note destination-help">Leave both blank to explore all destinations. A city narrows results further. With a country selected, offers with an unidentified country are excluded.</p>
+  </>;
+}
+
 function SearchForm({ onSave, busy }: { onSave: (data: SearchCriteria) => Promise<void>; busy: boolean }) {
   const [localError, setLocalError] = useState('');
   const future = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
@@ -183,6 +206,7 @@ function SearchForm({ onSave, busy }: { onSave: (data: SearchCriteria) => Promis
     const ages = String(f.get('childrenAges') ?? '').trim();
     if (ages && !/^\d{1,2}(\s*,\s*\d{1,2})*$/.test(ages)) { setLocalError('Enter children’s ages as numbers separated by commas.'); return; }
     await onSave({ name: String(f.get('name')), departure: String(f.get('departure')),
+      targetCity: String(f.get('targetCity') ?? '').trim(), targetCountry: String(f.get('targetCountry') ?? ''),
       nearbyAirports: f.has('nearbyAirports'), earliestDeparture: String(f.get('earliestDeparture')), latestReturn: String(f.get('latestReturn')),
       minNights: Number(f.get('minNights')), maxNights: Number(f.get('maxNights')), adults: Number(f.get('adults')),
       rooms: Number(f.get('rooms')),
@@ -193,6 +217,7 @@ function SearchForm({ onSave, busy }: { onSave: (data: SearchCriteria) => Promis
     {localError && <p role="alert" className="error-text">{localError}</p>}
     <div className="form-grid"><label>Give this search a name<input name="name" placeholder="A sunny February escape" required maxLength={100} /></label>
       <label>Departure city or airport<input name="departure" placeholder="Bucharest / OTP" required minLength={2} maxLength={120} /></label>
+      <DestinationFields />
       <label>Earliest departure<input name="earliestDeparture" type="date" defaultValue={future(60)} min={future(0)} required /></label>
       <label>Latest return<input name="latestReturn" type="date" defaultValue={future(90)} min={future(1)} required /></label>
       <label>Minimum nights<input name="minNights" type="number" min={1} max={60} defaultValue={5} required /></label>

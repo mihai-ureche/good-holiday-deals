@@ -129,11 +129,28 @@ export async function createApp() {
   });
   app.patch<{ Params: { id: string } }>('/api/searches/:id', async (request, reply) => {
     const id = z.uuid().parse(request.params.id);
-    const body = z.object({ active: z.boolean() }).parse(request.body);
-    const result = await db.query(`UPDATE searches SET criteria=jsonb_set(criteria,'{active}',$1::jsonb)
-      WHERE id=$2 AND user_id=$3`, [JSON.stringify(body.active), id, request.userId]);
-    if (!result.rowCount) return reply.code(404).send({ error: 'Search not found' });
-    return { ok: true };
+    const body = z.object({ active: z.boolean().optional(),
+      targetCity: z.string().optional(), targetCountry: z.string().optional(),
+    }).refine(v => Object.keys(v).length > 0, 'Provide a search setting to update').parse(request.body);
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('SELECT criteria FROM searches WHERE id=$1 AND user_id=$2 FOR UPDATE', [id, request.userId]);
+      if (!result.rowCount) { await client.query('ROLLBACK'); return reply.code(404).send({ error: 'Search not found' }); }
+      const previous = searchSchema.parse(result.rows[0].criteria);
+      const criteria = searchSchema.parse({ ...previous, ...body });
+      const changed = criteria.targetCity !== previous.targetCity || criteria.targetCountry !== previous.targetCountry;
+      await client.query(`UPDATE searches SET criteria=$1,
+        last_checked_at=CASE WHEN $2 THEN NULL ELSE last_checked_at END,
+        last_status=CASE WHEN $2 THEN NULL ELSE last_status END WHERE id=$3`, [criteria, changed, id]);
+      if (changed) {
+        await client.query('DELETE FROM offers WHERE search_id=$1', [id]);
+        await client.query('DELETE FROM discoveries WHERE search_id=$1', [id]);
+      }
+      await client.query('COMMIT');
+      return { ok: true };
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
   });
   app.delete<{ Params: { id: string } }>('/api/searches/:id', async (request, reply) => {
     const result = await db.query('DELETE FROM searches WHERE id=$1 AND user_id=$2', [z.uuid().parse(request.params.id), request.userId]);

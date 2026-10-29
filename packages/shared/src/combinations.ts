@@ -1,4 +1,6 @@
 import { matchingDiscoveries, matchingOffers, type SearchCriteria, type Discovery, type Offer } from './index.js';
+import { destinationKey } from './destinations.js';
+export { destinationKey } from './destinations.js';
 
 export type TripComponent = { provider: string; title: string; url: string; checkedAt: string };
 export type CombinedTrip = {
@@ -25,13 +27,6 @@ export type CombinedTrip = {
   checkedAt: string;
 };
 
-export function destinationKey(value: string) {
-  const key = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-  const aliases: Record<string, string> = { roma: 'rome', rome: 'rome', londra: 'london', london: 'london',
-    venetia: 'venice', venezia: 'venice', venice: 'venice', viena: 'vienna', vienna: 'vienna',
-    paris: 'paris', parigi: 'paris', atena: 'athens', athens: 'athens', bucuresti: 'bucharest', bucharest: 'bucharest' };
-  return aliases[key] ?? key;
-}
 const component = (value: Offer | Discovery): TripComponent => ({ provider: value.provider, title: value.title, url: value.url, checkedAt: value.checkedAt });
 const fresh = (value: Offer | Discovery) => Number.isFinite(Date.parse(value.checkedAt))
   && Date.parse(value.checkedAt) >= Date.now() - 48 * 3600000 && Date.parse(value.checkedAt) <= Date.now() + 300000;

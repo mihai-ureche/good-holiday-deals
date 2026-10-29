@@ -33,6 +33,9 @@ test('requested flight providers retain route, currency, journey and known dates
   const kiwi = `<a data-test="FlightsFromCityOverhaulResultsCard" aria-label="Rome, Italy" href="/en/search/results/bucharest/rome/2027-02-01_2027-02-03/2027-02-08_2027-02-10/"><p>from £30</p></a>`;
   const [deal] = parsePublicOffers('kiwi', kiwi, 'https://www.kiwi.com/en/city/flights-from-bucharest-romania/', checkedAt);
   assert.equal(deal?.currency, 'GBP'); assert.equal(deal?.journey, 'round-trip'); assert.equal(deal?.dateWindow?.earliestReturn, '2027-02-08');
+  assert.equal(deal?.destinationCountry, 'Italy');
+  assert.equal(matchingDiscoveries({ ...criteria, currency: 'GBP', targetCountry: 'IT' }, deal ? [deal] : []).length, 1);
+  assert.equal(matchingDiscoveries({ ...criteria, currency: 'GBP', targetCountry: 'GR' }, deal ? [deal] : []).length, 0);
   const cf = `<a class="CoTx" href="/flights-to-rome/"><div class="DKKX-main-text">Rome</div><div class="xEtQ-secondary-text">From $40</div></a>`;
   assert.equal(parsePublicOffers('cheapflights', cf, 'https://www.cheapflights.com/flights-from-bucharest/', checkedAt)[0]?.currency, 'USD');
   const sky = `<a class="BrowseListCard_BrowseListCard__card__hash" href="/transport/flights/BUCH/ROM?oym=2702&amp;iym=2702&amp;selectedoday=10&amp;selectediday=17&amp;rtn=1"><span class="BrowseListCard_DestinationTitle__hash">Rome</span><span class="QuoteLink_QuoteLink__hash">De la 160 lei</span></a>`;
