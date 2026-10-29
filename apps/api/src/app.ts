@@ -10,7 +10,8 @@ import { db } from './db.js';
 import { config } from './config.js';
 import { hashPassword, hashToken, token, verifyPassword } from './auth.js';
 import { searchSchema } from '../../../packages/shared/src/index.js';
-import { providers } from '../../../packages/providers/src/index.js';
+import { providers, sourceCatalog } from '../../../packages/providers/src/index.js';
+import { runSearch } from './search-runner.js';
 
 declare module 'fastify' { interface FastifyRequest { userId: string | null } }
 const credentials = z.object({ email: z.email().max(254).transform(v => v.toLowerCase()),
@@ -102,7 +103,7 @@ export async function createApp() {
   app.get('/api/me', async request => {
     const result = await db.query('SELECT email,digest_enabled AS "digestEnabled" FROM users WHERE id=$1', [request.userId]);
     return { ...result.rows[0], timezone: config.DIGEST_TIMEZONE, emailConfigured: config.EMAIL_MODE === 'graph',
-      providers: providers.map(p => p.id) };
+      providers: providers.map(p => p.id), sources: sourceCatalog };
   });
   app.patch('/api/me', async request => {
     const body = z.object({ digestEnabled: z.boolean() }).parse(request.body);
@@ -135,6 +136,17 @@ export async function createApp() {
     const result = await db.query('DELETE FROM searches WHERE id=$1 AND user_id=$2', [z.uuid().parse(request.params.id), request.userId]);
     if (!result.rowCount) return reply.code(404).send({ error: 'Search not found' });
     return { ok: true };
+  });
+  app.post<{ Params: { id: string } }>('/api/searches/:id/run', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async request => {
+    const result = await runSearch(z.uuid().parse(request.params.id), { userId: request.userId!, manual: true });
+    return { offers: result.offers.length, discoveries: result.discoveries.length, status: result.status, failures: result.failures };
+  });
+  app.get('/api/discoveries', async request => {
+    const result = await db.query(`SELECT d.payload,s.id AS "searchId",s.criteria->>'name' AS "searchName"
+      FROM discoveries d JOIN searches s ON s.id=d.search_id WHERE s.user_id=$1
+      AND (s.criteria->>'active')::boolean=true AND (s.criteria->>'latestReturn')::date>=current_date
+      AND (d.payload->>'checkedAt')::timestamptz>now()-interval '48 hours'`, [request.userId]);
+    return result.rows.map(row => ({ ...row.payload, searchId: row.searchId, searchName: row.searchName }));
   });
   app.get('/api/offers', async request => {
     const result = await db.query(`SELECT o.payload,s.id AS "searchId",s.criteria->>'name' AS "searchName"

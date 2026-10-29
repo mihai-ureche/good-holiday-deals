@@ -17,6 +17,8 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
   const { createApp } = await import('../apps/api/src/app.js');
   const { tick } = await import('../apps/worker/src/jobs.js');
   const { providers } = await import('../packages/providers/src/index.js');
+  const { config } = await import('../apps/api/src/config.js');
+  const realProviders = providers.splice(0);
   const originalFetch = globalThis.fetch;
   await migrate();
   const app = await createApp();
@@ -65,6 +67,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     const id = saved.json().id;
     const other = await app.inject({ url: '/api/searches', headers: { cookie: second.cookie } });
     assert.deepEqual(other.json(), []);
+    assert.equal((await app.inject({ method: 'POST', url: `/api/searches/${id}/run`, headers: { ...origin, cookie: second.cookie }, payload: {} })).statusCode, 404);
     assert.equal((await app.inject({ method: 'DELETE', url: `/api/searches/${id}`, headers: { ...origin, cookie: second.cookie }, payload: {} })).statusCode, 404);
     assert.equal((await app.inject({ url: '/api/me', headers: { cookie: first.cookie } })).json().timezone, 'Europe/Bucharest');
 
@@ -72,13 +75,30 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
       title: 'A family deal', destination: 'A sunny place', type: 'package', departureDate: '2027-02-10', returnDate: '2027-02-17',
       totalMinor: 120000, currency: 'EUR', priceBasis: 'family-total', adults: criteria.adults, childrenAges: criteria.childrenAges,
       url: 'https://example.com/deal', inclusions: ['Flights', 'Hotel'], swimming: 'unknown', swimmingEvidence: 'Not verified',
-      checkedAt: new Date().toISOString() }] });
+      checkedAt: new Date().toISOString() }], discover: async () => [{ provider: 'mock-provider', externalId: 'ad-1',
+      title: 'Advertised holiday', destination: 'Test coast', type: 'package', fromMinor: 10000, currency: 'EUR', priceUnit: 'person',
+      url: 'https://example.com/advert', departureCities: [], departureDates: [], nights: null,
+      conditions: 'Dates and family total are not confirmed.', checkedAt: new Date().toISOString() }] });
+    config.EMAIL_MODE = 'disabled';
+    const manual = await app.inject({ method: 'POST', url: `/api/searches/${id}/run`, headers: { ...origin, cookie: first.cookie }, payload: {} });
+    assert.equal(manual.statusCode, 200, manual.body);
+    assert.equal(manual.json().discoveries, 1);
+    assert.equal(emails.length, 0, 'manual collection works with email disabled and sends no mail');
+    assert.equal((await app.inject({ method: 'POST', url: `/api/searches/${id}/run`, headers: { ...origin, cookie: first.cookie }, payload: {} })).statusCode, 429);
+    const leads = await app.inject({ url: '/api/discoveries', headers: { cookie: first.cookie } });
+    assert.equal(leads.json()[0].priceUnit, 'person');
+    assert.equal((await app.inject({ url: '/api/discoveries', headers: { cookie: second.cookie } })).json().length, 0);
+    await tick(new Date('2027-01-04T06:00:00Z'));
+    assert.equal(emails.length, 0, 'scheduled collection also works without email');
+    assert.equal((await db.query('SELECT status FROM digests WHERE user_id=$1 AND local_day=$2', [first.id, '2027-01-04'])).rows[0].status, 'collected');
+    config.EMAIL_MODE = 'graph';
     await tick(new Date('2027-01-01T05:59:00Z'));
     assert.equal(emails.length, 0);
     await tick(new Date('2027-01-01T06:00:00Z'));
     await tick(new Date('2027-01-01T06:01:00Z'));
     assert.equal(emails.length, 1, 'one combined digest per user/day');
     assert.ok(JSON.stringify(emails[0]).includes('family total'));
+    assert.ok(JSON.stringify(emails[0]).includes('not confirmed family quotes'));
     assert.equal((await app.inject({ url: '/api/offers', headers: { cookie: first.cookie } })).json().length, 1);
     assert.deepEqual((await app.inject({ url: '/api/offers', headers: { cookie: second.cookie } })).json(), []);
     await app.inject({ method: 'PATCH', url: '/api/me', headers: { ...origin, cookie: first.cookie }, payload: { digestEnabled: false } });
@@ -94,7 +114,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     await app.inject({ method: 'POST', url: '/api/logout', headers: { ...origin, cookie: first.cookie }, payload: {} });
     assert.equal((await app.inject({ url: '/api/me', headers: { cookie: first.cookie } })).statusCode, 401);
   } finally {
-    providers.splice(0); globalThis.fetch = originalFetch;
+    providers.splice(0, providers.length, ...realProviders); globalThis.fetch = originalFetch;
     await app.close();
     await db.query('DELETE FROM users WHERE id=ANY($1::uuid[])', [created]);
     await db.query('DELETE FROM invitations WHERE token_hash=ANY($1::text[])', [inviteHashes]);

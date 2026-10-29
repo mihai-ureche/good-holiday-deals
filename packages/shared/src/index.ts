@@ -45,6 +45,47 @@ export const offerSchema = z.object({
 });
 export type Offer = z.infer<typeof offerSchema>;
 
+// Public adverts are leads, never inferred family quotes. Unknown facts stay unknown.
+export const discoverySchema = z.object({
+  provider: z.string().min(1).max(100),
+  externalId: z.string().min(1).max(200),
+  title: z.string().min(1).max(300),
+  destination: z.string().min(1).max(200),
+  type: z.enum(['package', 'flight', 'stay']),
+  fromMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  currency: z.enum(['EUR', 'RON', 'USD', 'GBP']),
+  priceUnit: z.enum(['person', 'advertised-stay', 'unspecified']),
+  url: z.url().refine(v => new URL(v).protocol === 'https:', 'Provider links must use HTTPS'),
+  departureCities: z.array(z.string().max(100)).max(20),
+  departureDates: z.array(day).max(100),
+  nights: z.number().int().min(1).max(60).nullable(),
+  conditions: z.string().min(1).max(600),
+  checkedAt: z.iso.datetime(),
+});
+export type Discovery = z.infer<typeof discoverySchema>;
+
+export function normalizedCity(value: string) {
+  const v = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  if (/\b(bucharest|bucuresti|otp|buh|otopeni)\b/.test(v)) return 'bucuresti';
+  if (/\b(cluj|clj)\b/.test(v)) return 'cluj';
+  if (/\b(iasi|ias)\b/.test(v)) return 'iasi';
+  if (/\b(timisoara|tsr)\b/.test(v)) return 'timisoara';
+  return v;
+}
+
+export function matchingDiscoveries(criteria: SearchCriteria, discoveries: Discovery[]) {
+  return discoveries.filter(d => {
+    if (d.currency !== criteria.currency || !criteria.tripTypes.includes(d.type)) return false;
+    if (d.type !== 'stay' && d.departureCities.length
+      && !d.departureCities.some(city => normalizedCity(city) === normalizedCity(criteria.departure))) return false;
+    if (d.nights !== null && (d.nights < criteria.minNights || d.nights > criteria.maxNights)) return false;
+    if (d.departureDates.length && !d.departureDates.some(date => date >= criteria.earliestDeparture
+      && (d.nights === null ? date < criteria.latestReturn
+        : new Date(Date.parse(date) + d.nights * 86400000).toISOString().slice(0, 10) <= criteria.latestReturn))) return false;
+    return true;
+  }).sort((a, b) => a.fromMinor - b.fromMinor);
+}
+
 export function matchingOffers(criteria: SearchCriteria, offers: Offer[]): Offer[] {
   const ages = (v: number[]) => [...v].sort((a, b) => a - b).join(',');
   return offers.filter(o => {

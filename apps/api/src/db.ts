@@ -40,6 +40,11 @@ export async function migrate() {
         updated_at timestamptz NOT NULL DEFAULT now(), error text,
         PRIMARY KEY (user_id, local_day)
       );
+      CREATE TABLE IF NOT EXISTS discoveries (
+        search_id uuid NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+        provider text NOT NULL, external_id text NOT NULL, payload jsonb NOT NULL,
+        PRIMARY KEY (search_id, provider, external_id)
+      );
     `);
     await client.query('COMMIT');
   } catch (e) {

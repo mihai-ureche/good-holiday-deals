@@ -6,7 +6,11 @@ A private travel notebook for an invited group. Save flexible family searches, c
 
 The foundation includes single-use email-bound invitations, password sign-in, private saved searches, family composition, flexible dates/nights, nearby-airport and swimming preferences, a sortable deals view, PostgreSQL storage, and a daily Microsoft Graph email worker. The UI distinguishes packages, flights, and stays and compares one currency at a time. Prices are stored as integer minor units.
 
-**No live travel sources are connected yet.** The provider registry is deliberately empty until the website list is supplied and each integration is assessed. No sample prices are presented as live deals. Free-text preferences are saved but there is no language model or automatic natural-language interpretation. Swimming preferences are soft preferences, not a weather guarantee. Destination discovery, weather data, and source-specific interpretation will be implemented with the real integrations. Separate flight/stay offers are not yet combined into bookable itineraries.
+**Four public offer integrations are connected:** Vola.ro, Travelminit.ro, ChristianTour.ro, and DirectBooking.ro. Save a search, then choose **Search now** to collect public promotions immediately, including when email is disabled. Results appear under **Deals worth a look → Advertised offers to explore**. The first check can take up to two minutes; public pages are cached for 30 minutes. The source panel lists all ten requested sites and which integrations remain pending. See [source coverage and limitations](docs/sources.md).
+
+Public promotions are **not confirmed family quotes**. Their starting prices retain their original per-person/stay/unknown basis and are never multiplied into a made-up family total. Known departure cities, dates, nights, trip types, and currencies are filtered; unknown dates or occupancy stay explicitly unconfirmed. Confirmed family quotes have a separate section, which stays empty until a source can supply party-specific quotes. No mock data is presented as live offers.
+
+Free-text preferences are saved but there is no language model or automatic natural-language interpretation. Weather and swimming preferences are not yet scored or verified. Nearby airports are not inferred when the source only identifies one specific departure city. Separate flight/stay offers are not yet combined into bookable itineraries.
 
 ## Run with Docker
 
@@ -107,15 +111,15 @@ Each user with an active, unexpired search and daily email enabled gets one comb
 
 Database locks and a unique user/date key prevent concurrent duplicate jobs. Build/authentication failures can retry up to three times, at least five minutes apart. Sending is marked before the Graph request. Timeouts or crashes around submission are **not automatically retried**, because Graph may already have accepted the message. Inspect `digests` and Sent Items to resolve `sending`/`uncertain` records; this favors avoiding duplicate emails over guaranteed delivery. Users can pause email or individual searches in the app.
 
-Until live providers exist, an enabled digest explicitly reports that no sources are configured. With `EMAIL_MODE=disabled`, the worker does not collect or send scheduled searches. No real email is sent by the test suite.
+Digests distinguish confirmed family totals from advertised starting prices and include any unavailable source IDs. With `EMAIL_MODE=disabled`, the worker still collects eligible searches at the scheduled time and records `collected`, without sending email. **Search now** works independently of the worker and never sends email. Starting the development API/frontend does not start the worker; use `npm run dev:worker` in another terminal if you want morning collection locally. No real email is sent by the test suite.
 
 ## Adding travel sources
 
 Add implementations of `TravelProvider` in `packages/providers/src/index.ts` and register them there. Source URLs are server-controlled; users cannot supply arbitrary crawl URLs. Before implementation, determine whether the website has an accessible feed or API, its crawling requirements, and how to obtain a price for the exact party, including ages at travel. Do not treat a per-adult advertised price as a verified family total.
 
-Adapters must honor their abort signal (45 seconds per source), bound response sizes and concurrency, respect source access rules/rate limits, and avoid bypassing logins, CAPTCHAs, or access controls. Use fixed allowed origins, including redirect validation, for server fetches. A failed source is recorded independently. Add retries/backoff within the adapter only where safe and within the time limit.
+Adapters must honor their abort signal (30 seconds per source), bound response sizes and concurrency, respect source access rules/rate limits, and avoid bypassing logins, CAPTCHAs, or access controls. The public HTTP client checks robots.txt for each page and redirect, blocks cross-origin redirects, limits bodies to 3 MiB, enforces per-origin spacing/crawl delay, and caches pages for 30 minutes and rules for six hours. Sources and crawled URLs are fixed in code. One database lock limits collection across API and worker processes; manual searches also have rate limits and a one-minute per-search cooldown. A failed source is recorded independently.
 
-Offers require HTTPS booking links, source IDs, explicit currency, quote timestamp, party composition, travel dates, price basis, inclusions, and swimming evidence (or unknown). Currency, date window, nights, party, and requested trip type are filtered before storage. Swimming is deliberately a preference. No currency conversion is guessed. Daily snapshots replace old offers; the UI only shows quotes checked in the last 48 hours.
+Confirmed offers require HTTPS booking links, source IDs, explicit currency, quote timestamp, party composition, travel dates, price basis, inclusions, and swimming evidence (or unknown). Public discoveries use a separate schema/table that preserves unknown occupancy, dates and price basis. No currency conversion is guessed. Collection atomically replaces each search's snapshot; the UI only shows records checked in the last 48 hours. A cached result retains its original check time.
 
 ## Backups and moving hosts
 
@@ -135,21 +139,34 @@ Restore before starting API/worker against the new database, then start them and
 
 ## Development and verification
 
-Use Node 24+ and npm. Start an isolated development database with:
+Use Node 24+ and npm. Create an ignored `.env.local` with a generated hex password and matching local connection settings:
+
+```dotenv
+POSTGRES_PASSWORD=YOUR_GENERATED_HEX_PASSWORD
+DATABASE_URL=postgres://holiday:YOUR_GENERATED_HEX_PASSWORD@localhost:5433/holiday
+DEV_DB_PORT=5433
+NODE_ENV=development
+APP_URL=http://localhost:5173
+PORT=3000
+EMAIL_MODE=disabled
+DIGEST_TIMEZONE=Europe/Bucharest
+```
+
+Start the development database with:
 
 ```sh
-docker compose -f compose.yaml -f compose.dev.yaml up -d db
+npm run dev:db
 npm ci
 ```
 
-Set `DATABASE_URL=postgres://holiday:YOUR_HEX_PASSWORD@localhost:5432/holiday` in the shell for the API and worker. `APP_URL` defaults to the Vite development origin, `http://localhost:5173`. Do not export production settings for local development. Run the API and frontend in separate terminals:
+The API, worker, and invitation commands load `.env`, then `.env.local`; local values override the file values in `.env`. Variables already exported in your shell take precedence over both files. Do not export production settings for local development. The database is bound to loopback on port 5433 by default, leaving port 5432 available for other projects. Run the API and frontend in separate terminals:
 
 ```sh
 npm run dev:api
 npm run dev:web
 ```
 
-For a local invitation with that database environment: `npm run invite -- person@example.com`.
+Open <http://localhost:5173>. For a local invitation: `npm run invite -- person@example.com`. Share the printed code privately and join using that email. Stop the API/frontend with Ctrl+C; stop the database with `docker compose --env-file .env --env-file .env.local -f compose.yaml -f compose.dev.yaml stop db`.
 
 ```sh
 npm run typecheck

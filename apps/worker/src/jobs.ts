@@ -1,12 +1,12 @@
 import { db } from '../../api/src/db.js';
 import { config } from '../../api/src/config.js';
-import { searchSchema, localSchedule, type Offer } from '../../../packages/shared/src/index.js';
-import { collect } from '../../../packages/providers/src/index.js';
+import { localSchedule, type Offer, type Discovery } from '../../../packages/shared/src/index.js';
+import { runSearch } from '../../api/src/search-runner.js';
 import { digestText, graphToken, sendDigest } from './email.js';
 
 export async function tick(now = new Date()) {
   const schedule = localSchedule(now, config.DIGEST_TIMEZONE);
-  if (!schedule.due || config.EMAIL_MODE === 'disabled') return;
+  if (!schedule.due) return;
   const lock = await db.connect();
   try {
     const acquired = await lock.query('SELECT pg_try_advisory_lock(73862402) AS acquired');
@@ -24,24 +24,14 @@ export async function tick(now = new Date()) {
       try {
         const searches = await db.query(`SELECT id,criteria FROM searches WHERE user_id=$1
           AND (criteria->>'active')::boolean=true AND (criteria->>'latestReturn')::date >= $2::date`, [user.id, schedule.day]);
-        const sections: { name: string; offers: Offer[]; status: string }[] = [];
+        const sections: { name: string; offers: Offer[]; discoveries: Discovery[]; status: string }[] = [];
         for (const row of searches.rows) {
-          const criteria = searchSchema.parse(row.criteria);
-          const result = await collect(criteria);
-          const status = result.configured === 0 ? 'No live providers configured yet.'
-            : `${result.offers.length} matching offers.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`;
-          // Replace each search snapshot atomically: a failed source cannot leave old quotes presented as fresh.
-          const client = await db.connect();
-          try {
-            await client.query('BEGIN');
-            await client.query('DELETE FROM offers WHERE search_id=$1', [row.id]);
-            for (const offer of result.offers) await client.query('INSERT INTO offers VALUES ($1,$2,$3,$4)',
-              [row.id, offer.provider, offer.externalId, offer]);
-            await client.query('UPDATE searches SET last_checked_at=now(),last_status=$1 WHERE id=$2', [status, row.id]);
-            await client.query('COMMIT');
-          } catch (e) { await client.query('ROLLBACK'); throw e; }
-          finally { client.release(); }
-          sections.push({ name: criteria.name, offers: result.offers, status });
+          const result = await runSearch(row.id);
+          sections.push({ name: result.name, offers: result.offers, discoveries: result.discoveries, status: result.status });
+        }
+        if (config.EMAIL_MODE === 'disabled') {
+          await db.query(`UPDATE digests SET status='collected',updated_at=now() WHERE user_id=$1 AND local_day=$2`, [user.id, schedule.day]);
+          continue;
         }
         // Check preferences again after collection; users may have paused their daily email.
         const enabled = await db.query('SELECT digest_enabled FROM users WHERE id=$1', [user.id]);

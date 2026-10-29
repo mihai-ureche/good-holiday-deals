@@ -44,7 +44,7 @@ test('source failures are isolated; results validated, deduplicated and attribut
   assert.equal(result.offers[0]?.provider, 'valid');
 });
 test('empty provider registry returns no invented deals', async () => {
-  assert.deepEqual(await collect(search), { offers: [], failures: [], configured: 0 });
+  assert.deepEqual(await collect(search, []), { offers: [], discoveries: [], failures: [], configured: 0 });
 });
 test('passwords are salted and verified', async () => {
   const first = await hashPassword('a-long-test-password');

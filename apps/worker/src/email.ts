@@ -1,12 +1,15 @@
 import { z } from 'zod';
 import { config } from '../../api/src/config.js';
-import { money, type Offer } from '../../../packages/shared/src/index.js';
+import { money, type Offer, type Discovery } from '../../../packages/shared/src/index.js';
 
-export function digestText(sections: { name: string; offers: Offer[]; status: string }[], appUrl: string) {
+export function digestText(sections: { name: string; offers: Offer[]; discoveries?: Discovery[]; status: string }[], appUrl: string) {
   return ['Your morning travel shortlist', '', ...sections.flatMap(s => [s.name, s.status,
     ...s.offers.slice(0, 15).map(o => `${o.title} — ${money(o)} (${o.priceBasis === 'family-total' ? 'family total' : 'indicative price'})\n`
       + `${o.destination} · ${o.departureDate} to ${o.returnDate} · ${o.type}\n${o.url}\n`
-      + `Included: ${o.inclusions.join(', ') || 'Check with provider'}\nSwimming: ${o.swimmingEvidence || 'Not verified'}\nChecked: ${o.checkedAt}\n`), '']),
+      + `Included: ${o.inclusions.join(', ') || 'Check with provider'}\nSwimming: ${o.swimmingEvidence || 'Not verified'}\nChecked: ${o.checkedAt}\n`),
+    ...(s.discoveries?.length ? ['Advertised offers — not confirmed family quotes:', ...s.discoveries.slice(0, 10).map(d =>
+      `${d.title} — from ${money({ totalMinor: d.fromMinor, currency: d.currency })} (${d.priceUnit === 'person' ? 'per person' : d.priceUnit === 'advertised-stay' ? 'advertised stay' : 'price basis unspecified'})\n`
+      + `${d.conditions}\n${d.url}\nChecked: ${d.checkedAt}\n`)] : []), '']),
   `Prices and availability may change. Confirm all details directly with the provider.`,
   `View deals or pause daily emails: ${appUrl}`].join('\n');
 }

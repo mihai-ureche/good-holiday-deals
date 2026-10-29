@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { money, type Offer, type SavedSearch, type SearchCriteria } from '../../../packages/shared/src/index.js';
+import { money, type Offer, type Discovery, type SavedSearch, type SearchCriteria } from '../../../packages/shared/src/index.js';
 import './style.css';
+import './sources.css';
 
-type Me = { email: string; digestEnabled: boolean; timezone: string; emailConfigured: boolean; providers: string[] };
+type Me = { email: string; digestEnabled: boolean; timezone: string; emailConfigured: boolean; providers: string[];
+  sources: { id: string; name: string; url: string; mode: string; detail: string }[] };
 type Search = SavedSearch & { lastCheckedAt: string | null; lastStatus: string | null };
 type ListedOffer = Offer & { searchId: string; searchName: string };
+type ListedDiscovery = Discovery & { searchId: string; searchName: string };
 async function api<T>(path: string, method = 'GET', data?: unknown): Promise<T> {
   const response = await fetch(`/api${path}`, { method, credentials: 'same-origin',
     headers: method === 'GET' ? {} : { 'Content-Type': 'application/json' },
@@ -19,6 +22,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [searches, setSearches] = useState<Search[]>([]);
   const [offers, setOffers] = useState<ListedOffer[]>([]);
+  const [discoveries, setDiscoveries] = useState<ListedDiscovery[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -27,10 +31,13 @@ function App() {
   const [type, setType] = useState('all');
   const [searchId, setSearchId] = useState('all');
   const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState<string | null>(null);
+  const [priceUnit, setPriceUnit] = useState('all');
+  const [leadLimit, setLeadLimit] = useState(24);
 
   async function refresh() {
-    const [account, saved, found] = await Promise.all([api<Me>('/me'), api<Search[]>('/searches'), api<ListedOffer[]>('/offers')]);
-    setMe(account); setSearches(saved); setOffers(found);
+    const [account, saved, found, leads] = await Promise.all([api<Me>('/me'), api<Search[]>('/searches'), api<ListedOffer[]>('/offers'), api<ListedDiscovery[]>('/discoveries')]);
+    setMe(account); setSearches(saved); setOffers(found); setDiscoveries(leads);
   }
   useEffect(() => { refresh().catch(e => { if (e.message !== 'Please sign in') setError(e.message); }).finally(() => setLoading(false)); }, []);
   async function action(task: () => Promise<unknown>, success?: string) {
@@ -40,13 +47,25 @@ function App() {
     finally { setBusy(false); }
   }
   const visible = offers.filter(o => o.currency === currency && (type === 'all' || o.type === type)
-    && (searchId === 'all' || o.searchId === searchId))
+    && o.priceBasis === 'family-total' && (searchId === 'all' || o.searchId === searchId))
     .sort((a, b) => sort === 'asc' ? a.totalMinor - b.totalMinor : b.totalMinor - a.totalMinor);
+  const publicOffers = discoveries.filter(o => o.currency === currency && (type === 'all' || o.type === type)
+    && (searchId === 'all' || o.searchId === searchId) && (priceUnit === 'all' || o.priceUnit === priceUnit))
+    .sort((a, b) => a.priceUnit.localeCompare(b.priceUnit) || (sort === 'asc' ? a.fromMinor - b.fromMinor : b.fromMinor - a.fromMinor));
+  async function searchNow(search: Search) {
+    setBusy(true); setRunning(search.id); setError(''); setNotice('');
+    try {
+      const result = await api<{ status: string }>(`/searches/${search.id}/run`, 'POST');
+      await refresh(); setSearchId(search.id); setCurrency(search.currency); setType('all'); setLeadLimit(24);
+      setNotice(result.status);
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); setRunning(null); }
+  }
 
   return <>
     <header className="topbar"><a className="brand" href="/"><span className="brand-mark">↗</span>good holiday<span className="brand-light">deals</span></a>
       {me ? <div className="account"><span>{me.email}</span><button className="text-button" disabled={busy} onClick={async () => {
-        setBusy(true); try { await api('/logout', 'POST'); setMe(null); setSearches([]); setOffers([]); }
+        setBusy(true); try { await api('/logout', 'POST'); setMe(null); setSearches([]); setOffers([]); setDiscoveries([]); }
         catch (e) { setError((e as Error).message); } finally { setBusy(false); }
       }}>Sign out</button></div> : <span className="private-label">A little travel club</span>}
     </header>
@@ -62,13 +81,17 @@ function App() {
             {!me.emailConfigured && <small>Email setup pending</small>}
           </div>
         </section>
-        {!me.providers.length && <div className="source-note"><span>◌</span><div><strong>Your notebook is ready. Live sources are next.</strong>
-          <p>Save your travel wishes now. Deals will appear once travel providers are connected.</p></div></div>}
+        <div className="source-note"><span>◌</span><div><strong>{me.providers.length} public offer sources ready to explore.</strong>
+          <p>Create a search, then choose Search now. Advertised prices need confirmation for your dates and family.</p>
+          <details className="source-details"><summary>View your travel sources</summary><div className="source-grid">{me.sources.map(source =>
+            <div key={source.id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.name} ↗</a>
+              <span className="source-mode">{source.mode === 'public-offers' ? 'Advertised offers connected' : source.mode === 'reviews' ? 'Reviews — open directly' : 'Open directly — integration pending'}</span><small>{source.detail}</small></div>)}</div></details>
+        </div></div>
         <section className="section"><div className="section-heading"><div><p className="eyebrow">01 / THE WISH LIST</p><h2>Where could you go?</h2></div>
           <button className="primary" onClick={() => setShowForm(!showForm)}>{showForm ? 'Close form' : '+ New search'}</button></div>
           {showForm && <SearchForm busy={busy} onSave={async data => {
             setError(''); setBusy(true);
-            try { await api('/searches', 'POST', data); await refresh(); setShowForm(false); setNotice('Search saved. Active searches are included in your morning email.'); }
+            try { await api('/searches', 'POST', data); await refresh(); setShowForm(false); setNotice('Search saved. Choose Search now to explore offers immediately.'); }
             catch (e) { setError((e as Error).message); } finally { setBusy(false); }
           }} />}
           {!searches.length && !showForm ? <div className="empty"><span className="empty-icon">↗</span><h3>Make room for a getaway.</h3>
@@ -81,26 +104,42 @@ function App() {
                 <div><dt>Your stay</dt><dd>{s.minNights === s.maxNights ? s.minNights : `${s.minNights}–${s.maxNights}`} nights</dd></div>
                 <div><dt>Your people</dt><dd>{s.adults} adults{s.childrenAges.length > 0 ? ` · children aged ${s.childrenAges.join(', ')}` : ''}</dd></div></dl>
               <p className="preference">{s.preferences || (s.swimming !== 'any' ? `Swimming preference: ${s.swimming.replace('-', ' ')}` : 'Open to possibilities.')}</p>
-              <small>{s.lastCheckedAt ? `Checked ${new Date(s.lastCheckedAt).toLocaleString()}. ${s.lastStatus ?? ''}` : 'Waiting for the first morning check.'}</small>
+              <small>{s.lastCheckedAt ? `Checked ${new Date(s.lastCheckedAt).toLocaleString()}. ${s.lastStatus ?? ''}` : 'Ready for your first search.'}</small>
+              <button className="primary search-now" disabled={busy || !s.active} onClick={() => void searchNow(s)}>{running === s.id ? 'Searching sources…' : 'Search now ↗'}</button>
               <div className="card-actions"><button className="text-button" disabled={busy} onClick={() => void action(() => api(`/searches/${s.id}`, 'PATCH', { active: !s.active }))}>{s.active ? 'Pause search' : 'Resume search'}</button>
                 <button className="text-button muted" disabled={busy} onClick={() => { if (window.confirm(`Delete “${s.name}”?`)) void action(() => api(`/searches/${s.id}`, 'DELETE'), 'Search deleted.'); }}>Delete</button></div>
             </article>)}</div>}
         </section>
-        <section className="section"><div className="section-heading"><div><p className="eyebrow">02 / THE POSSIBILITIES</p><h2>Deals worth a look<span className="count">{visible.length}</span></h2></div></div>
+        <section className="section"><div className="section-heading"><div><p className="eyebrow">02 / THE POSSIBILITIES</p><h2>Deals worth a look<span className="count">{visible.length + publicOffers.length}</span></h2></div></div>
           <div className="filters"><label>Search<select value={searchId} onChange={e => setSearchId(e.target.value)}><option value="all">All searches</option>{searches.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
             <label>Type<select value={type} onChange={e => setType(e.target.value)}><option value="all">All types</option><option value="package">Packages</option><option value="flight">Flights</option><option value="stay">Stays</option></select></label>
             <label>Currency<select value={currency} onChange={e => setCurrency(e.target.value)}>{['EUR', 'RON', 'USD', 'GBP'].map(c => <option key={c}>{c}</option>)}</select></label>
-            <label>Sort by<select value={sort} onChange={e => setSort(e.target.value)}><option value="asc">Total price: low to high</option><option value="desc">Total price: high to low</option></select></label>
+            <label>Sort by<select value={sort} onChange={e => setSort(e.target.value)}><option value="asc">Price: low to high</option><option value="desc">Price: high to low</option></select></label>
             <button className="text-button" disabled={busy} onClick={() => void action(refresh)}>Refresh</button>
           </div>
           <p className="filter-note">Prices are compared within one currency. Packages, flights, and stays include different things.</p>
-          {!visible.length ? <div className="empty compact"><h3>No deals to compare yet.</h3><p>Your next chapter will appear here. We’ll show the price, what’s included, and where to book.</p></div> :
+          {running && <p className="search-progress" role="status">Checking public sources. The first search can take up to two minutes; cached results are faster.</p>}
+          <h3 className="results-heading">Confirmed family totals <span className="count">{visible.length}</span></h3>
+          {!visible.length ? <div className="empty compact"><h3>No confirmed family quotes yet.</h3><p>Public promotions appear below. Their advertised starting prices do not confirm availability or the total for your family.</p></div> :
             <div className="offer-grid">{visible.map(o => <article className="offer-card" key={`${o.searchId}:${o.provider}:${o.externalId}`}>
               <div className="card-top"><span className="tag">{o.type}</span><span>{o.provider}</span></div><p className="eyebrow">{o.destination}</p><h3>{o.title}</h3>
               <p>{o.departureDate} → {o.returnDate}</p><strong className="price">{money(o)}</strong><p>{o.priceBasis === 'family-total' ? 'Total for your family' : 'Indicative price · family total unverified'}</p>
               <p className="preference">{o.inclusions.join(' · ') || 'Confirm inclusions with provider'}</p><p>Swimming: {o.swimmingEvidence || 'Not verified'}</p>
               <small>Checked {new Date(o.checkedAt).toLocaleString()} · {o.searchName}</small><a className="primary provider-link" href={o.url} target="_blank" rel="noopener noreferrer">View at provider ↗</a>
             </article>)}</div>}
+          <div className="advertised-heading"><div><h3 className="results-heading">Advertised offers to explore <span className="count">{publicOffers.length}</span></h3>
+            <p className="filter-note">Starting prices from provider pages. Unknown dates, airports, swimming conditions and family suitability require checking. Prices are grouped by their stated basis before sorting.</p></div>
+            <label>Price basis<select value={priceUnit} onChange={e => { setPriceUnit(e.target.value); setLeadLimit(24); }}><option value="all">All price bases</option><option value="person">Per person</option><option value="advertised-stay">Advertised stay</option><option value="unspecified">Unspecified basis</option></select></label></div>
+          {!publicOffers.length ? <div className="empty compact"><h3>No advertised offers for these filters yet.</h3><p>Choose Search now on an active search. Check the source status on your search card if a provider is unavailable.</p></div> :
+            <div className="offer-grid">{publicOffers.slice(0, leadLimit).map(o => <article className="offer-card advertised-card" key={`${o.searchId}:${o.provider}:${o.externalId}`}>
+              <div className="card-top"><span className="tag">{o.type} · advertised</span><span>{me.sources.find(s => s.id === o.provider)?.name ?? o.provider}</span></div>
+              <p className="eyebrow">{o.destination}</p><h3>{o.title}</h3><strong className="price"><span className="from-label">From </span>{money({ totalMinor: o.fromMinor, currency: o.currency })}</strong>
+              <p className="price-basis">{o.priceUnit === 'person' ? 'Per person · family total unconfirmed' : o.priceUnit === 'advertised-stay' ? 'Advertised stay · family total unconfirmed' : 'Price basis unspecified · family total unconfirmed'}</p>
+              <p>{o.departureDates.length ? `Advertised departure: ${o.departureDates.join(', ')}` : 'Travel dates not confirmed'}{o.nights ? ` · ${o.nights} nights` : ''}</p>
+              <p className="preference">{o.conditions}</p><small>Checked {new Date(o.checkedAt).toLocaleString()} · {o.searchName}</small>
+              <a className="primary provider-link" href={o.url} target="_blank" rel="noopener noreferrer">Check dates & family price ↗</a>
+            </article>)}</div>}
+          {publicOffers.length > leadLimit && <button className="text-button" onClick={() => setLeadLimit(leadLimit + 24)}>Show more advertised offers</button>}
         </section>
       </>}
       <footer><span>good holiday deals</span><p>For the places you haven’t been yet.</p><span>Plan together. Book directly.</span></footer>
