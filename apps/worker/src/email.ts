@@ -1,14 +1,21 @@
 import { z } from 'zod';
 import { config } from '../../api/src/config.js';
 import { money, type Offer, type Discovery } from '../../../packages/shared/src/index.js';
+import type { CombinedTrip } from '../../../packages/shared/src/combinations.js';
 
-export function digestText(sections: { name: string; offers: Offer[]; discoveries?: Discovery[]; status: string }[], appUrl: string) {
+export function digestText(sections: { name: string; offers: Offer[]; discoveries?: Discovery[]; combinations?: CombinedTrip[]; status: string }[], appUrl: string) {
   return ['Your morning travel shortlist', '', ...sections.flatMap(s => [s.name, s.status,
+    ...(s.combinations?.length ? ['Flight + accommodation, booked separately:', ...s.combinations.slice(0, 8).map(t =>
+      `${t.destination} — ${t.confidence === 'budget-estimate' ? 'ILLUSTRATIVE BUDGET' : 'SUM OF QUOTED TOTALS'}\n`
+      + `Total ${money({ totalMinor: t.totalMinorMin, currency: t.currency })}–${money({ totalMinor: t.totalMinorMax, currency: t.currency })}; `
+      + `average per traveler ${money({ totalMinor: t.perPersonMinorMin, currency: t.currency })}–${money({ totalMinor: t.perPersonMinorMax, currency: t.currency })}\n`
+      + `${t.minNights}–${t.maxNights} nights, ${t.travelers} travelers, ${t.rooms} room(s)\nFlight: ${t.flight.url}\nStay: ${t.stay.url}\n`
+      + `${t.assumptions.join('\n')}\nChecked: ${t.checkedAt}\n`)] : []),
     ...s.offers.slice(0, 15).map(o => `${o.title} — ${money(o)} (${o.priceBasis === 'family-total' ? 'family total' : 'indicative price'})\n`
       + `${o.destination} · ${o.departureDate} to ${o.returnDate} · ${o.type}\n${o.url}\n`
       + `Included: ${o.inclusions.join(', ') || 'Check with provider'}\nSwimming: ${o.swimmingEvidence || 'Not verified'}\nChecked: ${o.checkedAt}\n`),
     ...(s.discoveries?.length ? ['Advertised offers — not confirmed family quotes:', ...s.discoveries.slice(0, 10).map(d =>
-      `${d.title} — from ${money({ totalMinor: d.fromMinor, currency: d.currency })} (${d.priceUnit === 'person' ? 'per person' : d.priceUnit === 'advertised-stay' ? 'advertised stay' : 'price basis unspecified'})\n`
+      `${d.title} — from ${money({ totalMinor: d.fromMinor, currency: d.currency })} (${d.priceUnit === 'person' ? 'per person' : d.priceUnit === 'room-night' ? 'per room/night; verify basis' : d.priceUnit === 'advertised-stay' ? 'advertised stay' : 'price basis unspecified'})\n`
       + `${d.conditions}\n${d.url}\nChecked: ${d.checkedAt}\n`)] : []), '']),
   `Prices and availability may change. Confirm all details directly with the provider.`,
   `View deals or pause daily emails: ${appUrl}`].join('\n');

@@ -2,6 +2,7 @@ import { db } from '../../api/src/db.js';
 import { config } from '../../api/src/config.js';
 import { localSchedule, type Offer, type Discovery } from '../../../packages/shared/src/index.js';
 import { runSearch } from '../../api/src/search-runner.js';
+import type { CombinedTrip } from '../../../packages/shared/src/combinations.js';
 import { digestText, graphToken, sendDigest } from './email.js';
 
 export async function tick(now = new Date()) {
@@ -24,10 +25,10 @@ export async function tick(now = new Date()) {
       try {
         const searches = await db.query(`SELECT id,criteria FROM searches WHERE user_id=$1
           AND (criteria->>'active')::boolean=true AND (criteria->>'latestReturn')::date >= $2::date`, [user.id, schedule.day]);
-        const sections: { name: string; offers: Offer[]; discoveries: Discovery[]; status: string }[] = [];
+        const sections: { name: string; offers: Offer[]; discoveries: Discovery[]; combinations: CombinedTrip[]; status: string }[] = [];
         for (const row of searches.rows) {
           const result = await runSearch(row.id);
-          sections.push({ name: result.name, offers: result.offers, discoveries: result.discoveries, status: result.status });
+          sections.push({ name: result.name, offers: result.offers, discoveries: result.discoveries, combinations: result.combinations, status: result.status });
         }
         if (config.EMAIL_MODE === 'disabled') {
           await db.query(`UPDATE digests SET status='collected',updated_at=now() WHERE user_id=$1 AND local_day=$2`, [user.id, schedule.day]);

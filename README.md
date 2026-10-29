@@ -6,11 +6,19 @@ A private travel notebook for an invited group. Save flexible family searches, c
 
 The foundation includes single-use email-bound invitations, password sign-in, private saved searches, family composition, flexible dates/nights, nearby-airport and swimming preferences, a sortable deals view, PostgreSQL storage, and a daily Microsoft Graph email worker. The UI distinguishes packages, flights, and stays and compares one currency at a time. Prices are stored as integer minor units.
 
-**Four public offer integrations are connected:** Vola.ro, Travelminit.ro, ChristianTour.ro, and DirectBooking.ro. Save a search, then choose **Search now** to collect public promotions immediately, including when email is disabled. Results appear under **Deals worth a look → Advertised offers to explore**. The first check can take up to two minutes; public pages are cached for 30 minutes. The source panel lists all ten requested sites and which integrations remain pending. See [source coverage and limitations](docs/sources.md).
+**Nine public offer integrations are connected:** Vola.ro, Travelminit.ro, ChristianTour.ro, DirectBooking.ro, Momondo.ro, Skyscanner.ro, Kiwi.com, KAYAK, and Cheapflights. Save a search, then choose **Search now** to collect public promotions immediately, including when email is disabled. The first check can take up to five minutes; public pages are cached for 30 minutes. The source panel lists all requested sites and which integrations remain pending. See [source coverage and limitations](docs/sources.md).
 
-Public promotions are **not confirmed family quotes**. Their starting prices retain their original per-person/stay/unknown basis and are never multiplied into a made-up family total. Known departure cities, dates, nights, trip types, and currencies are filtered; unknown dates or occupancy stay explicitly unconfirmed. Confirmed family quotes have a separate section, which stays empty until a source can supply party-specific quotes. No mock data is presented as live offers.
+Public promotions retain their original price basis and currency. Known departure cities, dates/date windows, nights, trip types, and currencies are filtered; unknown dates or occupancy stay explicitly unconfirmed. No mock data is presented as live offers. The new Bucharest-specific flight landing-page adapters skip other departure cities; KAYAK also exposes promotions from other Romanian cities where available.
 
-Free-text preferences are saved but there is no language model or automatic natural-language interpretation. Weather and swimming preferences are not yet scored or verified. Nearby airports are not inferred when the source only identifies one specific departure city. Separate flight/stay offers are not yet combined into bookable itineraries.
+### Flight + accommodation
+
+Include **Flights** and **Stays** in the search and select the number of rooms. After **Search now**, open **Deals worth a look → Flight + accommodation**. Choose **Total for all travelers** or **Average per person**. Each combination includes separate flight/stay links and a cost breakdown, and can use different flight and hotel providers.
+
+The engine pairs the same destination (including a small explicit city-alias map) and currency. Compatible, fresh, party-specific flight and stay quotes with exactly matching dates can produce a **sum of quoted totals**. Public fares and nightly hotel rates produce **illustrative budgets**, with a range for the requested nights and explicit assumptions: equal airfares for adults and children; a return leg at the same fare where no return price is supplied; selected rooms at the advertised nightly rate. KAYAK homepage hotel cards do not state their rate basis, so interpreting them as room/night is itself a visible budgeting assumption. Unspecified-basis hotel adverts are excluded from calculations. No currency conversion is inferred. Average per person divides the group budget and does not assert equal individual charges.
+
+Budget estimates are not live availability checks or bookable package quotes. Dates, room occupancy, baggage, transfers, taxes, flight arrival times, and final prices need provider confirmation. Flights and stays are booked separately. The same combinations and assumptions are included in daily emails. Existing searches default to one room; create a new search to select another room count.
+
+Free-text preferences are saved but there is no language model or automatic natural-language interpretation. Weather and swimming preferences are not yet scored or verified. Nearby airports are not inferred when the source only identifies one specific departure city.
 
 ## Run with Docker
 
@@ -166,7 +174,9 @@ npm run dev:api
 npm run dev:web
 ```
 
-Open <http://localhost:5173>. For a local invitation: `npm run invite -- person@example.com`. Share the printed code privately and join using that email. Stop the API/frontend with Ctrl+C; stop the database with `docker compose --env-file .env --env-file .env.local -f compose.yaml -f compose.dev.yaml stop db`.
+Open <http://localhost:5173> or <http://127.0.0.1:5173>. With a loopback `APP_URL` in development mode, the API accepts `localhost`, `127.0.0.1`, and `[::1]` origins on that exact frontend port and protocol. Production accepts only the configured origin. Browser sessions are hostname-specific, so sign in again when switching between localhost and 127.0.0.1.
+
+For a local invitation: `npm run invite -- person@example.com`. Share the printed code privately and join using that email. Stop the API/frontend with Ctrl+C; stop the database with `docker compose --env-file .env --env-file .env.local -f compose.yaml -f compose.dev.yaml stop db`.
 
 ```sh
 npm run typecheck

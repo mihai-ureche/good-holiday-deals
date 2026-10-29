@@ -12,6 +12,9 @@ import { hashPassword, hashToken, token, verifyPassword } from './auth.js';
 import { searchSchema } from '../../../packages/shared/src/index.js';
 import { providers, sourceCatalog } from '../../../packages/providers/src/index.js';
 import { runSearch } from './search-runner.js';
+import { combineTrips } from '../../../packages/shared/src/combinations.js';
+import { offerSchema, discoverySchema } from '../../../packages/shared/src/index.js';
+import { isAllowedOrigin } from './origin.js';
 
 declare module 'fastify' { interface FastifyRequest { userId: string | null } }
 const credentials = z.object({ email: z.email().max(254).transform(v => v.toLowerCase()),
@@ -30,7 +33,7 @@ export async function createApp() {
     if (!request.url.startsWith('/api/')) return;
     reply.header('Cache-Control', 'no-store');
     if (!['GET', 'HEAD'].includes(request.method)) {
-      if (request.headers.origin !== new URL(config.APP_URL).origin) {
+      if (!isAllowedOrigin(request.headers.origin, config.APP_URL, config.NODE_ENV)) {
         return reply.code(403).send({ error: 'Request origin is not allowed' });
       }
       if (!request.headers['content-type']?.startsWith('application/json')) {
@@ -139,7 +142,17 @@ export async function createApp() {
   });
   app.post<{ Params: { id: string } }>('/api/searches/:id/run', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async request => {
     const result = await runSearch(z.uuid().parse(request.params.id), { userId: request.userId!, manual: true });
-    return { offers: result.offers.length, discoveries: result.discoveries.length, status: result.status, failures: result.failures };
+    return { offers: result.offers.length, discoveries: result.discoveries.length, combinations: result.combinations.length, status: result.status, failures: result.failures };
+  });
+  app.get('/api/trips', async request => {
+    const result = await db.query(`SELECT s.id,s.criteria,
+      COALESCE((SELECT jsonb_agg(payload) FROM offers WHERE search_id=s.id), '[]'::jsonb) AS quotes,
+      COALESCE((SELECT jsonb_agg(payload) FROM discoveries WHERE search_id=s.id), '[]'::jsonb) AS leads
+      FROM searches s WHERE s.user_id=$1 AND (s.criteria->>'active')::boolean=true
+      AND (s.criteria->>'latestReturn')::date>=current_date`, [request.userId]);
+    return result.rows.flatMap(row => combineTrips(searchSchema.parse(row.criteria),
+      row.quotes.map((value: unknown) => offerSchema.parse(value)), row.leads.map((value: unknown) => discoverySchema.parse(value)))
+      .map(trip => ({ ...trip, searchId: row.id, searchName: row.criteria.name })));
   });
   app.get('/api/discoveries', async request => {
     const result = await db.query(`SELECT d.payload,s.id AS "searchId",s.criteria->>'name' AS "searchName"

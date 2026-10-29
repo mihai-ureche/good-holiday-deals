@@ -4,7 +4,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 const agent = 'GoodHolidayDeals/0.1';
 type RobotRules = { isAllowed(url: string, agent?: string): boolean | undefined; getCrawlDelay(agent?: string): number | undefined };
 const robotsParser = createRequire(import.meta.url)('robots-parser') as (url: string, body: string) => RobotRules;
-const allowedHosts = new Set(['www.vola.ro', 'travelminit.ro', 'christiantour.ro', 'www.directbooking.ro']);
+const allowedHosts = new Set(['www.vola.ro', 'travelminit.ro', 'christiantour.ro', 'www.directbooking.ro',
+  'www.momondo.ro', 'www.kiwi.com', 'www.ro.kayak.com', 'www.cheapflights.com', 'www.skyscanner.ro']);
 const maxBytes = 3 * 1024 * 1024;
 type Page = { html: string; url: string; checkedAt: string };
 const pages = new Map<string, { expires: number; page: Page }>();

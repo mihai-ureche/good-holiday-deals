@@ -1,4 +1,4 @@
-import { matchingOffers, offerSchema, discoverySchema, matchingDiscoveries, type Offer, type Discovery, type SearchCriteria } from '../../shared/src/index.js';
+import { matchingOffers, offerSchema, discoverySchema, matchingDiscoveries, normalizedCity, type Offer, type Discovery, type SearchCriteria } from '../../shared/src/index.js';
 import { sourceCatalog } from './catalog.js';
 import { publicPage } from './http.js';
 import { parsePublicOffers } from './public-offers.js';
@@ -13,8 +13,9 @@ export interface TravelProvider {
 
 export const providers: TravelProvider[] = sourceCatalog.filter(s => s.mode === 'public-offers').map(source => ({
   id: source.id,
-  discover: async (_criteria, signal) => {
-    const page = await publicPage(source.url, signal);
+  discover: async (criteria, signal) => {
+    if (['momondo', 'kiwi', 'cheapflights', 'skyscanner'].includes(source.id) && normalizedCity(criteria.departure) !== 'bucuresti') return [];
+    const page = await publicPage('crawlUrl' in source ? source.crawlUrl : source.url, signal);
     const results = parsePublicOffers(source.id, page.html, page.url, page.checkedAt);
     if (!results.length) throw new Error('The public page did not expose supported offer cards');
     return results;

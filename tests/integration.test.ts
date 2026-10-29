@@ -57,11 +57,16 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
       return { cookie, id: row.rows[0].id, email };
     }
     const first = await register(); const second = await register();
+    config.NODE_ENV = 'development';
+    const aliasLogin = await app.inject({ method: 'POST', url: '/api/auth/login',
+      headers: { origin: 'http://127.0.0.1:5173' }, payload: { email: first.email, password: 'a-valid-long-password' } });
+    config.NODE_ENV = 'test';
+    assert.equal(aliasLogin.statusCode, 200, 'login should accept the frontend URL printed by Vite in development');
     const invalid = await app.inject({ method: 'POST', url: '/api/auth/register', headers: origin,
       payload: { email: 'uninvited@example.com', password: 'a-valid-long-password', invitation: token() } });
     assert.equal(invalid.statusCode, 400);
     const payload = { name: 'Family escape', departure: 'Bucharest', earliestDeparture: '2027-02-01', latestReturn: '2027-02-28',
-      minNights: 5, maxNights: 8, adults: 2, childrenAges: [4, 8], tripTypes: ['package'], swimming: 'sea' };
+      minNights: 5, maxNights: 8, adults: 2, childrenAges: [4, 8], rooms: 1, tripTypes: ['package', 'flight', 'stay'], swimming: 'sea' };
     const saved = await app.inject({ method: 'POST', url: '/api/searches', headers: { ...origin, cookie: first.cookie }, payload });
     assert.equal(saved.statusCode, 201, saved.body);
     const id = saved.json().id;
@@ -78,16 +83,30 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
       checkedAt: new Date().toISOString() }], discover: async () => [{ provider: 'mock-provider', externalId: 'ad-1',
       title: 'Advertised holiday', destination: 'Test coast', type: 'package', fromMinor: 10000, currency: 'EUR', priceUnit: 'person',
       url: 'https://example.com/advert', departureCities: [], departureDates: [], nights: null,
-      conditions: 'Dates and family total are not confirmed.', checkedAt: new Date().toISOString() }] });
+      conditions: 'Dates and family total are not confirmed.', checkedAt: new Date().toISOString() },
+      { provider: 'mock-provider', externalId: 'flight-ad', title: 'Test flight', destination: 'Rome', type: 'flight', fromMinor: 10000,
+        currency: 'EUR', priceUnit: 'person', journey: 'round-trip', url: 'https://example.com/flight', departureCities: ['Bucharest'],
+        departureDates: [], nights: null, conditions: 'Family price not confirmed.', checkedAt: new Date().toISOString() },
+      { provider: 'mock-provider', externalId: 'stay-ad', title: 'Test hotel', destination: 'Roma', type: 'stay', fromMinor: 5000,
+        currency: 'EUR', priceUnit: 'room-night', basisAssumed: true, url: 'https://example.com/stay', departureCities: [],
+        departureDates: [], nights: null, conditions: 'Capacity and nightly basis not confirmed.', checkedAt: new Date().toISOString() }] });
     config.EMAIL_MODE = 'disabled';
     const manual = await app.inject({ method: 'POST', url: `/api/searches/${id}/run`, headers: { ...origin, cookie: first.cookie }, payload: {} });
     assert.equal(manual.statusCode, 200, manual.body);
-    assert.equal(manual.json().discoveries, 1);
+    assert.equal(manual.json().discoveries, 3);
+    assert.equal(manual.json().combinations, 1);
     assert.equal(emails.length, 0, 'manual collection works with email disabled and sends no mail');
     assert.equal((await app.inject({ method: 'POST', url: `/api/searches/${id}/run`, headers: { ...origin, cookie: first.cookie }, payload: {} })).statusCode, 429);
     const leads = await app.inject({ url: '/api/discoveries', headers: { cookie: first.cookie } });
-    assert.equal(leads.json()[0].priceUnit, 'person');
+    assert.ok(leads.json().some((d: { priceUnit: string }) => d.priceUnit === 'person'));
     assert.equal((await app.inject({ url: '/api/discoveries', headers: { cookie: second.cookie } })).json().length, 0);
+    const combined = await app.inject({ url: '/api/trips', headers: { cookie: first.cookie } });
+    assert.equal(combined.statusCode, 200);
+    assert.equal(combined.json().length, 1);
+    assert.equal(combined.json()[0].confidence, 'budget-estimate');
+    assert.equal(combined.json()[0].totalMinorMin, 65000);
+    assert.equal(combined.json()[0].perPersonMinorMin, 16250);
+    assert.deepEqual((await app.inject({ url: '/api/trips', headers: { cookie: second.cookie } })).json(), []);
     await tick(new Date('2027-01-04T06:00:00Z'));
     assert.equal(emails.length, 0, 'scheduled collection also works without email');
     assert.equal((await db.query('SELECT status FROM digests WHERE user_id=$1 AND local_day=$2', [first.id, '2027-01-04'])).rows[0].status, 'collected');
@@ -99,6 +118,9 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     assert.equal(emails.length, 1, 'one combined digest per user/day');
     assert.ok(JSON.stringify(emails[0]).includes('family total'));
     assert.ok(JSON.stringify(emails[0]).includes('not confirmed family quotes'));
+    assert.ok(JSON.stringify(emails[0]).includes('ILLUSTRATIVE BUDGET'));
+    assert.ok(JSON.stringify(emails[0]).includes('https://example.com/flight'));
+    assert.ok(JSON.stringify(emails[0]).includes('https://example.com/stay'));
     assert.equal((await app.inject({ url: '/api/offers', headers: { cookie: first.cookie } })).json().length, 1);
     assert.deepEqual((await app.inject({ url: '/api/offers', headers: { cookie: second.cookie } })).json(), []);
     await app.inject({ method: 'PATCH', url: '/api/me', headers: { ...origin, cookie: first.cookie }, payload: { digestEnabled: false } });
@@ -113,6 +135,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     assert.equal(record.rows[0].status, 'uncertain');
     await app.inject({ method: 'POST', url: '/api/logout', headers: { ...origin, cookie: first.cookie }, payload: {} });
     assert.equal((await app.inject({ url: '/api/me', headers: { cookie: first.cookie } })).statusCode, 401);
+    assert.equal((await app.inject({ url: '/api/trips', headers: { cookie: first.cookie } })).statusCode, 401);
   } finally {
     providers.splice(0, providers.length, ...realProviders); globalThis.fetch = originalFetch;
     await app.close();

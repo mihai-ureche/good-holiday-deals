@@ -11,6 +11,7 @@ export const searchSchema = z.object({
   maxNights: z.number().int().min(1).max(60),
   adults: z.number().int().min(1).max(8),
   childrenAges: z.array(z.number().int().min(0).max(17)).max(6),
+  rooms: z.number().int().min(1).max(6).optional(),
   currency: z.enum(['EUR', 'RON', 'USD', 'GBP']).default('EUR'),
   tripTypes: z.array(z.enum(['package', 'flight', 'stay'])).min(1).max(3),
   swimming: z.enum(['any', 'sea', 'heated-pool', 'either']).default('any'),
@@ -54,10 +55,13 @@ export const discoverySchema = z.object({
   type: z.enum(['package', 'flight', 'stay']),
   fromMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   currency: z.enum(['EUR', 'RON', 'USD', 'GBP']),
-  priceUnit: z.enum(['person', 'advertised-stay', 'unspecified']),
+  priceUnit: z.enum(['person', 'advertised-stay', 'room-night', 'unspecified']),
+  journey: z.enum(['one-way', 'round-trip', 'unknown']).optional(),
+  basisAssumed: z.boolean().optional(),
   url: z.url().refine(v => new URL(v).protocol === 'https:', 'Provider links must use HTTPS'),
   departureCities: z.array(z.string().max(100)).max(20),
   departureDates: z.array(day).max(100),
+  dateWindow: z.object({ earliestDeparture: day, latestDeparture: day, earliestReturn: day, latestReturn: day }).optional(),
   nights: z.number().int().min(1).max(60).nullable(),
   conditions: z.string().min(1).max(600),
   checkedAt: z.iso.datetime(),
@@ -79,6 +83,15 @@ export function matchingDiscoveries(criteria: SearchCriteria, discoveries: Disco
     if (d.type !== 'stay' && d.departureCities.length
       && !d.departureCities.some(city => normalizedCity(city) === normalizedCity(criteria.departure))) return false;
     if (d.nights !== null && (d.nights < criteria.minNights || d.nights > criteria.maxNights)) return false;
+    if (d.dateWindow) {
+      const w = d.dateWindow;
+      const outLow = Math.max(Date.parse(w.earliestDeparture), Date.parse(criteria.earliestDeparture));
+      const outHigh = Math.min(Date.parse(w.latestDeparture), Date.parse(criteria.latestReturn));
+      const backLow = Date.parse(w.earliestReturn);
+      const backHigh = Math.min(Date.parse(w.latestReturn), Date.parse(criteria.latestReturn));
+      if (outLow > outHigh || backLow > backHigh || backHigh - outLow < criteria.minNights * 86400000
+        || backLow - outHigh > criteria.maxNights * 86400000) return false;
+    }
     if (d.departureDates.length && !d.departureDates.some(date => date >= criteria.earliestDeparture
       && (d.nights === null ? date < criteria.latestReturn
         : new Date(Date.parse(date) + d.nights * 86400000).toISOString().slice(0, 10) <= criteria.latestReturn))) return false;

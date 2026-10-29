@@ -1,6 +1,7 @@
 import { db } from './db.js';
 import { searchSchema } from '../../../packages/shared/src/index.js';
 import { collect, type TravelProvider } from '../../../packages/providers/src/index.js';
+import { combineTrips } from '../../../packages/shared/src/combinations.js';
 
 export class SearchRunError extends Error {
   constructor(message: string, public statusCode: number) { super(message); }
@@ -22,8 +23,9 @@ export async function runSearch(id: string, options: { userId?: string; manual?:
     acquired = (await client.query('SELECT pg_try_advisory_lock(73862403) AS acquired')).rows[0].acquired;
     if (!acquired) throw new SearchRunError('Another search is running. Please try again shortly.', 409);
     const result = await collect(criteria, options.adapters);
+    const combinations = combineTrips(criteria, result.offers, result.discoveries);
     const status = result.configured === 0 ? 'No live providers configured yet.'
-      : `${result.offers.length} family quotes; ${result.discoveries.length} advertised offers to check.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`;
+      : `${result.offers.length} family quotes; ${result.discoveries.length} advertised offers; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`;
     await client.query('BEGIN');
     try {
       const exists = await client.query('SELECT id FROM searches WHERE id=$1 FOR UPDATE', [id]);
@@ -37,7 +39,7 @@ export async function runSearch(id: string, options: { userId?: string; manual?:
       await client.query('UPDATE searches SET last_checked_at=now(),last_status=$1 WHERE id=$2', [status, id]);
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
-    return { ...result, name: criteria.name, status };
+    return { ...result, combinations, name: criteria.name, status };
   } finally {
     if (acquired) await client.query('SELECT pg_advisory_unlock(73862403)');
     client.release();

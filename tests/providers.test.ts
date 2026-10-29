@@ -23,6 +23,29 @@ test('Romanian prices retain currency and exact minor units', () => {
   assert.deepEqual(parsePrice('285 ron'), { fromMinor: 28500, currency: 'RON' });
   assert.deepEqual(parsePrice('1.234 lei'), { fromMinor: 123400, currency: 'RON' });
   assert.equal(parsePrice('Call for a quote'), null);
+  assert.deepEqual(parsePrice('From $1,234.50'), { fromMinor: 123450, currency: 'USD' });
+  assert.deepEqual(parsePrice('from £30'), { fromMinor: 3000, currency: 'GBP' });
+});
+test('requested flight providers retain route, currency, journey and known dates', () => {
+  const html = `<a class="c1ucB-content" href="/zboruri/bucuresti/roma"><p class="c1ucB-title">Zboruri din Bucureşti către</p><p class="c1ucB-subtitle">Roma</p><span class="c1ucB-price-container-price">40 €</span></a>`;
+  const [momondo] = parsePublicOffers('momondo', html, 'https://www.momondo.ro/zboruri-din-bucuresti', checkedAt);
+  assert.equal(momondo?.fromMinor, 4000); assert.equal(momondo?.journey, 'unknown');
+  const kiwi = `<a data-test="FlightsFromCityOverhaulResultsCard" aria-label="Rome, Italy" href="/en/search/results/bucharest/rome/2027-02-01_2027-02-03/2027-02-08_2027-02-10/"><p>from £30</p></a>`;
+  const [deal] = parsePublicOffers('kiwi', kiwi, 'https://www.kiwi.com/en/city/flights-from-bucharest-romania/', checkedAt);
+  assert.equal(deal?.currency, 'GBP'); assert.equal(deal?.journey, 'round-trip'); assert.equal(deal?.dateWindow?.earliestReturn, '2027-02-08');
+  const cf = `<a class="CoTx" href="/flights-to-rome/"><div class="DKKX-main-text">Rome</div><div class="xEtQ-secondary-text">From $40</div></a>`;
+  assert.equal(parsePublicOffers('cheapflights', cf, 'https://www.cheapflights.com/flights-from-bucharest/', checkedAt)[0]?.currency, 'USD');
+  const sky = `<a class="BrowseListCard_BrowseListCard__card__hash" href="/transport/flights/BUCH/ROM?oym=2702&amp;iym=2702&amp;selectedoday=10&amp;selectediday=17&amp;rtn=1"><span class="BrowseListCard_DestinationTitle__hash">Rome</span><span class="QuoteLink_QuoteLink__hash">De la 160 lei</span></a>`;
+  const [skyscanner] = parsePublicOffers('skyscanner', sky, 'https://www.skyscanner.ro/zboruri-de-la/buch/zboruri-ieftine-de-la-bucuresti.html', checkedAt);
+  assert.deepEqual(skyscanner?.departureDates, ['2027-02-10']); assert.equal(skyscanner?.nights, 7); assert.equal(skyscanner?.journey, 'round-trip');
+});
+test('KAYAK groups flights and hotels by destination and exposes assumed hotel basis', () => {
+  const html = `<div class="P_Ok-wrapper"><h3 class="P_Ok-title">Roma</h3>
+    <a class="P_Ok-sublink-link" href="/zboruri/Bucuresti-OTP/Roma-FCO"><span class="P_Ok-sublink-text">Zborul Bucureşti - Roma (OTP - FCO)</span><span class="P_Ok-sublink-price">≥46 €</span></a>
+    <a class="P_Ok-sublink-link" href="/Hoteluri-in-Roma-Test.123.ksp"><span class="P_Ok-sublink-text">Test hotel</span><span class="P_Ok-sublink-price">≥50 €</span></a></div>`;
+  const rows = parsePublicOffers('kayak', html, 'https://www.ro.kayak.com/', checkedAt);
+  assert.equal(rows.length, 2); assert.equal(rows[0]?.destination, rows[1]?.destination);
+  assert.deepEqual(rows[0]?.departureCities, ['Bucureşti']); assert.equal(rows[1]?.priceUnit, 'room-night'); assert.equal(rows[1]?.basisAssumed, true);
 });
 test('four public layouts produce explicitly unconfirmed leads, not invented family quotes', async () => {
   const inputs = [ ['vola', volaHtml, 'https://www.vola.ro/'], ['directbooking', hotelHtml, 'https://www.directbooking.ro/'],

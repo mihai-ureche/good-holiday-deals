@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { money, type Offer, type Discovery, type SavedSearch, type SearchCriteria } from '../../../packages/shared/src/index.js';
 import './style.css';
 import './sources.css';
+import './trips.css';
+import { TripResults, type ListedTrip } from './TripResults.js';
 
 type Me = { email: string; digestEnabled: boolean; timezone: string; emailConfigured: boolean; providers: string[];
   sources: { id: string; name: string; url: string; mode: string; detail: string }[] };
@@ -23,6 +25,7 @@ function App() {
   const [searches, setSearches] = useState<Search[]>([]);
   const [offers, setOffers] = useState<ListedOffer[]>([]);
   const [discoveries, setDiscoveries] = useState<ListedDiscovery[]>([]);
+  const [trips, setTrips] = useState<ListedTrip[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -36,8 +39,8 @@ function App() {
   const [leadLimit, setLeadLimit] = useState(24);
 
   async function refresh() {
-    const [account, saved, found, leads] = await Promise.all([api<Me>('/me'), api<Search[]>('/searches'), api<ListedOffer[]>('/offers'), api<ListedDiscovery[]>('/discoveries')]);
-    setMe(account); setSearches(saved); setOffers(found); setDiscoveries(leads);
+    const [account, saved, found, leads, combinations] = await Promise.all([api<Me>('/me'), api<Search[]>('/searches'), api<ListedOffer[]>('/offers'), api<ListedDiscovery[]>('/discoveries'), api<ListedTrip[]>('/trips')]);
+    setMe(account); setSearches(saved); setOffers(found); setDiscoveries(leads); setTrips(combinations);
   }
   useEffect(() => { refresh().catch(e => { if (e.message !== 'Please sign in') setError(e.message); }).finally(() => setLoading(false)); }, []);
   async function action(task: () => Promise<unknown>, success?: string) {
@@ -52,6 +55,8 @@ function App() {
   const publicOffers = discoveries.filter(o => o.currency === currency && (type === 'all' || o.type === type)
     && (searchId === 'all' || o.searchId === searchId) && (priceUnit === 'all' || o.priceUnit === priceUnit))
     .sort((a, b) => a.priceUnit.localeCompare(b.priceUnit) || (sort === 'asc' ? a.fromMinor - b.fromMinor : b.fromMinor - a.fromMinor));
+  const visibleTrips = trips.filter(t => t.currency === currency && (searchId === 'all' || t.searchId === searchId)
+    && (type === 'all' || type === 'flight-stay'));
   async function searchNow(search: Search) {
     setBusy(true); setRunning(search.id); setError(''); setNotice('');
     try {
@@ -65,7 +70,7 @@ function App() {
   return <>
     <header className="topbar"><a className="brand" href="/"><span className="brand-mark">↗</span>good holiday<span className="brand-light">deals</span></a>
       {me ? <div className="account"><span>{me.email}</span><button className="text-button" disabled={busy} onClick={async () => {
-        setBusy(true); try { await api('/logout', 'POST'); setMe(null); setSearches([]); setOffers([]); setDiscoveries([]); }
+        setBusy(true); try { await api('/logout', 'POST'); setMe(null); setSearches([]); setOffers([]); setDiscoveries([]); setTrips([]); }
         catch (e) { setError((e as Error).message); } finally { setBusy(false); }
       }}>Sign out</button></div> : <span className="private-label">A little travel club</span>}
     </header>
@@ -102,7 +107,7 @@ function App() {
               <h3>{s.name}</h3><p className="from">From {s.departure}{s.nearbyAirports ? ' + nearby airports' : ''}</p>
               <dl><div><dt>Travel window</dt><dd>{s.earliestDeparture} → {s.latestReturn}</dd></div>
                 <div><dt>Your stay</dt><dd>{s.minNights === s.maxNights ? s.minNights : `${s.minNights}–${s.maxNights}`} nights</dd></div>
-                <div><dt>Your people</dt><dd>{s.adults} adults{s.childrenAges.length > 0 ? ` · children aged ${s.childrenAges.join(', ')}` : ''}</dd></div></dl>
+                <div><dt>Your people</dt><dd>{s.adults} adults{s.childrenAges.length > 0 ? ` · children aged ${s.childrenAges.join(', ')}` : ''} · {s.rooms ?? 1} room(s)</dd></div></dl>
               <p className="preference">{s.preferences || (s.swimming !== 'any' ? `Swimming preference: ${s.swimming.replace('-', ' ')}` : 'Open to possibilities.')}</p>
               <small>{s.lastCheckedAt ? `Checked ${new Date(s.lastCheckedAt).toLocaleString()}. ${s.lastStatus ?? ''}` : 'Ready for your first search.'}</small>
               <button className="primary search-now" disabled={busy || !s.active} onClick={() => void searchNow(s)}>{running === s.id ? 'Searching sources…' : 'Search now ↗'}</button>
@@ -110,15 +115,16 @@ function App() {
                 <button className="text-button muted" disabled={busy} onClick={() => { if (window.confirm(`Delete “${s.name}”?`)) void action(() => api(`/searches/${s.id}`, 'DELETE'), 'Search deleted.'); }}>Delete</button></div>
             </article>)}</div>}
         </section>
-        <section className="section"><div className="section-heading"><div><p className="eyebrow">02 / THE POSSIBILITIES</p><h2>Deals worth a look<span className="count">{visible.length + publicOffers.length}</span></h2></div></div>
+        <section className="section"><div className="section-heading"><div><p className="eyebrow">02 / THE POSSIBILITIES</p><h2>Deals worth a look<span className="count">{visible.length + publicOffers.length + visibleTrips.length}</span></h2></div></div>
           <div className="filters"><label>Search<select value={searchId} onChange={e => setSearchId(e.target.value)}><option value="all">All searches</option>{searches.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-            <label>Type<select value={type} onChange={e => setType(e.target.value)}><option value="all">All types</option><option value="package">Packages</option><option value="flight">Flights</option><option value="stay">Stays</option></select></label>
+            <label>Type<select value={type} onChange={e => setType(e.target.value)}><option value="all">All types</option><option value="flight-stay">Flight + accommodation</option><option value="package">Packages</option><option value="flight">Flights</option><option value="stay">Stays</option></select></label>
             <label>Currency<select value={currency} onChange={e => setCurrency(e.target.value)}>{['EUR', 'RON', 'USD', 'GBP'].map(c => <option key={c}>{c}</option>)}</select></label>
             <label>Sort by<select value={sort} onChange={e => setSort(e.target.value)}><option value="asc">Price: low to high</option><option value="desc">Price: high to low</option></select></label>
             <button className="text-button" disabled={busy} onClick={() => void action(refresh)}>Refresh</button>
           </div>
           <p className="filter-note">Prices are compared within one currency. Packages, flights, and stays include different things.</p>
-          {running && <p className="search-progress" role="status">Checking public sources. The first search can take up to two minutes; cached results are faster.</p>}
+          {running && <p className="search-progress" role="status">Checking public sources. The first search can take up to five minutes; cached results are faster.</p>}
+          {(type === 'all' || type === 'flight-stay') && <TripResults trips={visibleTrips} sort={sort} />}
           <h3 className="results-heading">Confirmed family totals <span className="count">{visible.length}</span></h3>
           {!visible.length ? <div className="empty compact"><h3>No confirmed family quotes yet.</h3><p>Public promotions appear below. Their advertised starting prices do not confirm availability or the total for your family.</p></div> :
             <div className="offer-grid">{visible.map(o => <article className="offer-card" key={`${o.searchId}:${o.provider}:${o.externalId}`}>
@@ -129,13 +135,13 @@ function App() {
             </article>)}</div>}
           <div className="advertised-heading"><div><h3 className="results-heading">Advertised offers to explore <span className="count">{publicOffers.length}</span></h3>
             <p className="filter-note">Starting prices from provider pages. Unknown dates, airports, swimming conditions and family suitability require checking. Prices are grouped by their stated basis before sorting.</p></div>
-            <label>Price basis<select value={priceUnit} onChange={e => { setPriceUnit(e.target.value); setLeadLimit(24); }}><option value="all">All price bases</option><option value="person">Per person</option><option value="advertised-stay">Advertised stay</option><option value="unspecified">Unspecified basis</option></select></label></div>
+            <label>Price basis<select value={priceUnit} onChange={e => { setPriceUnit(e.target.value); setLeadLimit(24); }}><option value="all">All price bases</option><option value="person">Per person</option><option value="advertised-stay">Advertised stay</option><option value="room-night">Room/night (check basis)</option><option value="unspecified">Unspecified basis</option></select></label></div>
           {!publicOffers.length ? <div className="empty compact"><h3>No advertised offers for these filters yet.</h3><p>Choose Search now on an active search. Check the source status on your search card if a provider is unavailable.</p></div> :
             <div className="offer-grid">{publicOffers.slice(0, leadLimit).map(o => <article className="offer-card advertised-card" key={`${o.searchId}:${o.provider}:${o.externalId}`}>
               <div className="card-top"><span className="tag">{o.type} · advertised</span><span>{me.sources.find(s => s.id === o.provider)?.name ?? o.provider}</span></div>
               <p className="eyebrow">{o.destination}</p><h3>{o.title}</h3><strong className="price"><span className="from-label">From </span>{money({ totalMinor: o.fromMinor, currency: o.currency })}</strong>
-              <p className="price-basis">{o.priceUnit === 'person' ? 'Per person · family total unconfirmed' : o.priceUnit === 'advertised-stay' ? 'Advertised stay · family total unconfirmed' : 'Price basis unspecified · family total unconfirmed'}</p>
-              <p>{o.departureDates.length ? `Advertised departure: ${o.departureDates.join(', ')}` : 'Travel dates not confirmed'}{o.nights ? ` · ${o.nights} nights` : ''}</p>
+              <p className="price-basis">{o.priceUnit === 'person' ? 'Per person · family total unconfirmed' : o.priceUnit === 'room-night' ? 'Room/night assumed · check basis and capacity' : o.priceUnit === 'advertised-stay' ? 'Advertised stay · family total unconfirmed' : 'Price basis unspecified · family total unconfirmed'}</p>
+              <p>{o.departureDates.length ? `Advertised departure: ${o.departureDates.join(', ')}` : o.dateWindow ? `Advertised departure window: ${o.dateWindow.earliestDeparture} – ${o.dateWindow.latestDeparture}` : 'Travel dates not confirmed'}{o.nights ? ` · ${o.nights} nights` : ''}</p>
               <p className="preference">{o.conditions}</p><small>Checked {new Date(o.checkedAt).toLocaleString()} · {o.searchName}</small>
               <a className="primary provider-link" href={o.url} target="_blank" rel="noopener noreferrer">Check dates & family price ↗</a>
             </article>)}</div>}
@@ -179,6 +185,7 @@ function SearchForm({ onSave, busy }: { onSave: (data: SearchCriteria) => Promis
     await onSave({ name: String(f.get('name')), departure: String(f.get('departure')),
       nearbyAirports: f.has('nearbyAirports'), earliestDeparture: String(f.get('earliestDeparture')), latestReturn: String(f.get('latestReturn')),
       minNights: Number(f.get('minNights')), maxNights: Number(f.get('maxNights')), adults: Number(f.get('adults')),
+      rooms: Number(f.get('rooms')),
       childrenAges: ages ? ages.split(',').map(v => Number(v.trim())) : [], currency: f.get('currency') as SearchCriteria['currency'],
       tripTypes: f.getAll('tripTypes') as SearchCriteria['tripTypes'], swimming: f.get('swimming') as SearchCriteria['swimming'],
       preferences: String(f.get('preferences')), active: true });
@@ -192,6 +199,7 @@ function SearchForm({ onSave, busy }: { onSave: (data: SearchCriteria) => Promis
       <label>Maximum nights<input name="maxNights" type="number" min={1} max={60} defaultValue={8} required /></label>
       <label>Adults<input name="adults" type="number" min={1} max={8} defaultValue={2} required /></label>
       <label>Children’s ages at departure<input name="childrenAges" placeholder="e.g. 4, 8 (leave empty if none)" maxLength={30} /></label>
+      <label>Rooms for the stay budget<input name="rooms" type="number" min={1} max={6} defaultValue={1} required /></label>
       <label>Price currency<select name="currency">{['EUR', 'RON', 'USD', 'GBP'].map(c => <option key={c}>{c}</option>)}</select></label>
       <label>Swimming preference<select name="swimming"><option value="any">No preference</option><option value="sea">Sea swimming</option><option value="heated-pool">Heated pool</option><option value="either">Sea or heated pool</option></select></label>
     </div>

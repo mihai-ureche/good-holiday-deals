@@ -6,7 +6,11 @@ export const sourceCatalog = [
   { id: 'christiantour', name: 'ChristianTour.ro', url: 'https://christiantour.ro/', mode: 'public-offers', detail: 'Public holiday promotions. Exact travel dates and family total need confirmation.' },
   { id: 'directbooking', name: 'DirectBooking.ro', url: 'https://www.directbooking.ro/', mode: 'public-offers', detail: 'Public hotel starting prices; price basis and availability need confirmation.' },
   { id: 'amfostacolo', name: 'AmFostAcolo.ro', url: 'https://amfostacolo.ro/', mode: 'reviews', detail: 'Use for traveller reviews; not integrated as a live price source.' },
-  { id: 'skyscanner', name: 'Skyscanner.ro', url: 'https://www.skyscanner.ro/', mode: 'manual', detail: 'Flight search results need a supported provider integration.' },
+  { id: 'skyscanner', name: 'Skyscanner.ro', url: 'https://www.skyscanner.ro/', crawlUrl: 'https://www.skyscanner.ro/zboruri-de-la/buch/zboruri-ieftine-de-la-bucuresti.html', mode: 'public-offers', detail: 'Public Bucharest landing-page promotions. Advertised dates are retained; excluded transport search endpoints are not crawled.' },
+  { id: 'momondo', name: 'Momondo.ro', url: 'https://www.momondo.ro/', crawlUrl: 'https://www.momondo.ro/zboruri-din-bucuresti', mode: 'public-offers', detail: 'Public route promotions from Bucharest. Exact dates, return fare and family availability need checking.' },
+  { id: 'kiwi', name: 'Kiwi.com', url: 'https://www.kiwi.com/', crawlUrl: 'https://www.kiwi.com/en/city/flights-from-bucharest-romania/', mode: 'public-offers', detail: 'Public city-deal fares from Bucharest. Currency, dates, journey type and self-transfer conditions need checking.' },
+  { id: 'kayak', name: 'KAYAK', url: 'https://www.ro.kayak.com/', mode: 'public-offers', detail: 'Public flight and hotel promotions grouped by destination. Combined budgets show assumptions for dates, return fares and room rates.' },
+  { id: 'cheapflights', name: 'Cheapflights', url: 'https://www.cheapflights.com/', crawlUrl: 'https://www.cheapflights.com/flights-from-bucharest/', mode: 'public-offers', detail: 'Public Bucharest route fares, usually in USD. No currency conversion or confirmed family quote is inferred.' },
   { id: 'eximtur', name: 'Eximtur.ro', url: 'https://www.eximtur.ro/', mode: 'manual', detail: 'The inspected homepage did not expose usable live quotes.' },
   { id: 'paravion', name: 'Paravion.ro', url: 'https://www.paravion.ro/', mode: 'manual', detail: 'The inspected homepage redirected; a reliable quote integration is pending.' },
 ] as const;
