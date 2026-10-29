@@ -11,9 +11,9 @@ const flight: Discovery = { provider: 'flight', externalId: 'f1', title: 'Flight
   conditions: 'Advertised fare; verify family availability.', checkedAt: now };
 const stay: Discovery = { ...flight, provider: 'hotel', externalId: 'h1', title: 'Hotel', destination: 'Roma', type: 'stay', fromMinor: 5000,
   priceUnit: 'room-night', basisAssumed: true, url: 'https://example.com/hotel', departureCities: [] };
-const quote: Offer = { provider: 'flight', externalId: 'quoted-flight', title: 'Family flight', destination: 'Rome', type: 'flight',
+const quote: Offer = { provider: 'flight', externalId: 'quoted-flight', title: 'Family flight', destination: 'Rome', type: 'flight', journey: 'round-trip',
   departureDate: '2027-02-10', returnDate: '2027-02-17', totalMinor: 60000, currency: 'EUR', priceBasis: 'family-total',
-  adults: 2, childrenAges: [4, 8], booking: { reference: 'flight-quote-1', description: 'Flight OTP–FCO, return, quoted for the selected party.', linkKind: 'specific-offer' }, url: 'https://example.com/flight', inclusions: [], swimming: 'unknown', swimmingEvidence: '', checkedAt: now };
+  adults: 2, childrenAges: [4, 8], booking: { reference: 'flight-quote-1', live: true, description: 'Flight OTP–FCO, return, quoted for the selected party.', linkKind: 'specific-offer' }, url: 'https://example.com/flight', inclusions: [], swimming: 'unknown', swimmingEvidence: '', checkedAt: now };
 
 test('public promotions never produce a synthetic flight and stay price', () => {
   assert.deepEqual(combineTrips(criteria, [], [flight, stay]), []);

@@ -1,5 +1,6 @@
 .destination-help { grid-column: 1 / -1; margin: 0; }
-.destination-editor { margin-top: 16px; font-size: 12px; }
-.destination-editor summary { cursor: pointer; color: #2e5942; }
-.destination-editor form { display: grid; gap: 12px; margin-top: 14px; }
-.destination-editor .text-button { justify-self: start; }
+.edit-search { display: block; margin-top: 16px; }
+.search-form { scroll-margin-top: 24px; }
+.search-form-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.form-actions { display: flex; align-items: center; gap: 24px; flex-shrink: 0; }
+@media (max-width: 650px) { .form-actions { justify-content: flex-end; } }

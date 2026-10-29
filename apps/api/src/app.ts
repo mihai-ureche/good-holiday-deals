@@ -106,7 +106,8 @@ export async function createApp() {
   app.get('/api/me', async request => {
     const result = await db.query('SELECT email,digest_enabled AS "digestEnabled" FROM users WHERE id=$1', [request.userId]);
     return { ...result.rows[0], timezone: config.DIGEST_TIMEZONE, emailConfigured: config.EMAIL_MODE === 'graph',
-      providers: providers.map(p => p.id), sources: sourceCatalog };
+      providers: providers.map(p => p.id), sources: sourceCatalog,
+      liveFlightPricing: providers.some(provider => provider.liveRoundTripFlights && provider.search) };
   });
   app.patch('/api/me', async request => {
     const body = z.object({ digestEnabled: z.boolean() }).parse(request.body);
@@ -129,9 +130,8 @@ export async function createApp() {
   });
   app.patch<{ Params: { id: string } }>('/api/searches/:id', async (request, reply) => {
     const id = z.uuid().parse(request.params.id);
-    const body = z.object({ active: z.boolean().optional(),
-      targetCity: z.string().optional(), targetCountry: z.string().optional(),
-    }).refine(v => Object.keys(v).length > 0, 'Provide a search setting to update').parse(request.body);
+    const body = z.partialRecord(searchSchema.keyof(), z.unknown())
+      .refine(v => Object.keys(v).length > 0, 'Provide a search setting to update').parse(request.body);
     const client = await db.connect();
     try {
       await client.query('BEGIN');
@@ -139,7 +139,9 @@ export async function createApp() {
       if (!result.rowCount) { await client.query('ROLLBACK'); return reply.code(404).send({ error: 'Search not found' }); }
       const previous = searchSchema.parse(result.rows[0].criteria);
       const criteria = searchSchema.parse({ ...previous, ...body });
-      const changed = criteria.targetCity !== previous.targetCity || criteria.targetCountry !== previous.targetCountry;
+      const { name: previousName, active: previousActive, ...previousFilters } = previous;
+      const { name, active, ...filters } = criteria;
+      const changed = JSON.stringify(filters) !== JSON.stringify(previousFilters);
       await client.query(`UPDATE searches SET criteria=$1,
         last_checked_at=CASE WHEN $2 THEN NULL ELSE last_checked_at END,
         last_status=CASE WHEN $2 THEN NULL ELSE last_status END WHERE id=$3`, [criteria, changed, id]);
@@ -174,6 +176,7 @@ export async function createApp() {
     const result = await db.query(`SELECT d.payload,s.id AS "searchId",s.criteria->>'name' AS "searchName"
       FROM discoveries d JOIN searches s ON s.id=d.search_id WHERE s.user_id=$1
       AND (s.criteria->>'active')::boolean=true AND (s.criteria->>'latestReturn')::date>=current_date
+      AND d.payload->>'type'<>'flight'
       AND (d.payload->>'checkedAt')::timestamptz>now()-interval '48 hours'`, [request.userId]);
     return result.rows.map(row => ({ ...row.payload, searchId: row.searchId, searchName: row.searchName }));
   });

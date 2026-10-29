@@ -108,10 +108,10 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
       const price = parsePrice(link.find('.P_Ok-sublink-price').text());
       if (!href || !price || !title) return;
       if (href.startsWith('/zboruri/')) {
-        const origin = title.match(/^Zbor(?:ul|uri)\s+(.+?)\s+-\s+/i)?.[1];
-        if (!origin) return;
-        add({ ...price, title, destination, type: 'flight', priceUnit: 'person', journey: 'unknown', url: href, linkKind: 'search',
-          departureCities: [origin], departureDates: [], nights: null,
+        const route = title.match(/^Zbor(?:ul|uri)\s+(.+?)\s+-\s+(.+?)(?:\s+\([A-Z]{3}\s*-\s*[A-Z]{3}\))?$/i);
+        if (!route) return;
+        add({ ...price, title, destination: route[2]!, type: 'flight', priceUnit: 'person', journey: 'unknown', url: href, linkKind: 'search',
+          departureCities: [route[1]!], departureDates: [], nights: null,
           conditions: 'Advertised route fare per person. Dates, return journey, baggage, transfers and family availability are not confirmed.' });
       } else if (/^\/Hoteluri-in-/.test(href)) {
         add({ ...price, title, destination, type: 'stay', priceUnit: 'room-night', basisAssumed: true, url: href, linkKind: 'destination',

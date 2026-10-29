@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { searchSchema } from '../../../packages/shared/src/index.js';
-import { collect, type TravelProvider } from '../../../packages/providers/src/index.js';
+import { collect, providers, type TravelProvider } from '../../../packages/providers/src/index.js';
 import { combineTrips } from '../../../packages/shared/src/combinations.js';
 
 export class SearchRunError extends Error {
@@ -24,8 +24,11 @@ export async function runSearch(id: string, options: { userId?: string; manual?:
     if (!acquired) throw new SearchRunError('Another search is running. Please try again shortly.', 409);
     const result = await collect(criteria, options.adapters);
     const combinations = combineTrips(criteria, result.offers, result.discoveries);
-    const status = result.configured === 0 ? 'No live providers configured yet.'
-      : `${result.offers.length} specific quotes; ${result.discoveries.length} promotions; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`;
+    const missingFlightSource = criteria.tripTypes.includes('flight')
+      && !(options.adapters ?? providers).some(provider => provider.liveRoundTripFlights && provider.search);
+    const status = (result.configured === 0 ? 'No quote providers configured for this search.'
+      : `${result.offers.length} specific quotes; ${result.discoveries.length} promotions; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`)
+      + (missingFlightSource ? ' Live round-trip flight pricing is not connected.' : '');
     await client.query('BEGIN');
     try {
       const exists = await client.query('SELECT id,criteria FROM searches WHERE id=$1 FOR UPDATE', [id]);

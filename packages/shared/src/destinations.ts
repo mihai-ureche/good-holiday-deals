@@ -31,7 +31,7 @@ const cityGroups: [string, string][] = [
   ['DE', 'Berlin;Munich|Munchen;Frankfurt;Hamburg;Dortmund;Cologne|Koln;Dusseldorf'],
   ['AT', 'Vienna|Viena|Wien;Salzburg;Innsbruck'], ['HU', 'Budapest|Budapesta;Debrecen'],
   ['CZ', 'Prague|Praga|Praha'], ['NL', 'Amsterdam;Eindhoven;Rotterdam'], ['BE', 'Brussels|Bruxelles;Charleroi'],
-  ['CY', 'Larnaca;Paphos|Pafos;Ayia Napa;Limassol'], ['MT', 'Valletta;St Julians;Sliema;Gozo'],
+  ['CY', 'Larnaca;Paphos|Pafos;Ayia Napa;Limassol'], ['MT', 'Valletta;St Julians;Sliema;Gozo;Luqa;Qawra'],
   ['HR', 'Dubrovnik;Split;Zagreb;Zadar;Pula'], ['ME', 'Podgorica;Tivat;Budva;Kotor'],
   ['AL', 'Tirana;Sarande|Saranda;Durres;Vlore'], ['TN', 'Tunis;Hammamet;Sousse;Djerba;Monastir'],
   ['MA', 'Marrakech|Marrakesh;Agadir;Casablanca;Fes'], ['AE', 'Dubai;Abu Dhabi;Ras al Khaimah;Sharjah'],

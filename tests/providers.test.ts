@@ -81,7 +81,7 @@ test('four public layouts produce explicitly unconfirmed leads, not invented fam
   assert.equal(travelminit.linkKind, 'property');
   assert.equal(travelminit.sourceUrl, 'https://travelminit.ro/');
   const result = await collect(criteria, [{ id: 'vola', discover: async () => [vola] }]);
-  assert.equal(result.offers.length, 0); assert.equal(result.discoveries.length, 1);
+  assert.equal(result.offers.length, 0); assert.equal(result.discoveries.length, 0, 'a flight teaser must never become a result');
 });
 test('public leads enforce known origins, dates and nights; unknowns remain unconfirmed', () => {
   const flight = parsePublicOffers('vola', volaHtml, 'https://www.vola.ro/', checkedAt)[0]!;

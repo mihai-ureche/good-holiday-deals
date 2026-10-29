@@ -2,8 +2,9 @@ import { useId } from 'react';
 import { isSpecificOffer, money, type Offer, type Discovery } from '../../../packages/shared/src/index.js';
 import { FullWindowDialog } from './FullWindowDialog.js';
 import './offers.css';
+import { PromotionDates } from './PromotionDates.js';
 
-export function OfferDetails({ offer, onDismiss }: { offer: Offer | Discovery; onDismiss: () => void }) {
+export function OfferDetails({ offer, onDismiss }: { offer: (Offer | Discovery) & { searchId?: string }; onDismiss: () => void }) {
   const titleId = useId();
   const promotion = 'fromMinor' in offer;
   const specific = !promotion && isSpecificOffer(offer);
@@ -21,10 +22,6 @@ export function OfferDetails({ offer, onDismiss }: { offer: Offer | Discovery; o
           <div><dt>Advertised price basis</dt><dd>{offer.priceUnit === 'person' ? 'Per person' : offer.priceUnit === 'advertised-stay' ? 'Advertised stay'
             : offer.priceUnit === 'room-night' ? offer.basisAssumed ? 'Room/night assumed; not stated by provider' : 'Per room/night' : 'Not stated by provider'}</dd></div>
           {offer.type !== 'stay' && <div><dt>Departure</dt><dd>{offer.departureCities.join(', ') || 'Not stated by provider'}</dd></div>}
-          <div><dt>{offer.type === 'stay' ? 'Advertised check-in' : 'Advertised departure'}</dt><dd>{offer.departureDates.length ? offer.departureDates.join(', ')
-            : offer.dateWindow ? `Departure ${offer.dateWindow.earliestDeparture} to ${offer.dateWindow.latestDeparture}; return ${offer.dateWindow.earliestReturn} to ${offer.dateWindow.latestReturn}`
-              : 'Exact dates not stated by provider'}</dd></div>
-          {!!offer.returnDates?.length && <div><dt>{offer.type === 'stay' ? 'Advertised check-out' : 'Advertised return'}</dt><dd>{offer.returnDates.join(', ')}</dd></div>}
           {offer.type === 'flight' && <div><dt>Journey</dt><dd>{offer.journey === 'round-trip' ? 'Return flight' : offer.journey === 'one-way' ? 'One-way flight' : 'Not stated by provider'}</dd></div>}
           <div><dt>Advertised duration</dt><dd>{offer.nights ? `${offer.nights} nights` : 'Not stated by provider'}</dd></div>
           <div><dt>Travelers / rooms</dt><dd>Your requested party and room availability are not confirmed.</dd></div>
@@ -38,6 +35,7 @@ export function OfferDetails({ offer, onDismiss }: { offer: Offer | Discovery; o
         </>}
         <div><dt>Checked</dt><dd>{new Date(offer.checkedAt).toLocaleString()}</dd></div>
       </dl>
+      {promotion && <PromotionDates offer={offer} />}
       <p className="offer-detail-note">{promotion ? offer.conditions : offer.booking?.description}</p>
       {promotion && <p className="offer-detail-note">This is a promotion, with no individual flight or room quote. The link opens {offer.linkKind === 'search'
         ? 'the advertised search, which may show several results' : offer.linkKind === 'property' ? 'the hotel page, where a room and rate still need to be selected' : 'the provider’s promotion or destination page'}.

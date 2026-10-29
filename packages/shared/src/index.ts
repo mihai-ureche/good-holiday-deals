@@ -35,6 +35,7 @@ export const offerSchema = z.object({
   destination: z.string().min(1).max(200),
   destinationCountry: z.string().trim().min(2).max(120).optional(),
   type: z.enum(['package', 'flight', 'stay']),
+  journey: z.enum(['round-trip', 'one-way', 'unknown']).optional(),
   departureDate: day,
   returnDate: day,
   totalMinor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -46,6 +47,7 @@ export const offerSchema = z.object({
     reference: z.string().trim().min(1).max(200),
     description: z.string().trim().min(1).max(1000),
     linkKind: z.literal('specific-offer'),
+    live: z.boolean().optional(),
     rooms: z.number().int().min(1).max(6).optional(),
     expiresAt: z.iso.datetime().optional(),
   }).optional(),
@@ -88,6 +90,8 @@ export type Discovery = z.infer<typeof discoverySchema>;
 export function isSpecificOffer(offer: Offer): boolean {
   return offer.priceBasis === 'family-total' && !!offer.booking
     && offer.booking.linkKind === 'specific-offer'
+    && (offer.type !== 'flight' || (offer.journey === 'round-trip' && offer.booking.live === true
+      && offer.returnDate > offer.departureDate))
     && (offer.type !== 'stay' || offer.booking.rooms !== undefined)
     && (!offer.booking.expiresAt || Date.parse(offer.booking.expiresAt) > Date.now());
 }

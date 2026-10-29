@@ -58,7 +58,7 @@ test('collection filters quotes and public discoveries before saving, including 
     discover: async () => [flight, stay, { ...flight, externalId: 'greece', destination: 'Athens' },
       { ...flight, externalId: 'unknown', destination: 'Unknown' }] }]);
   assert.deepEqual(result.offers.map(o => o.externalId), ['italy']);
-  assert.deepEqual(result.discoveries.map(o => o.externalId), ['flight', 'stay']);
+  assert.deepEqual(result.discoveries.map(o => o.externalId), ['stay']);
   assert.equal(combineTrips(target, [], result.discoveries).length, 0);
   assert.equal(combineTrips({ ...target, targetCity: 'Venice' }, [], [flight, stay]).length, 0);
   assert.equal(matchingOffers({ ...criteria, targetCountry: 'GR' }, [quote]).length, 1);

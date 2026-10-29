@@ -9,4 +9,8 @@
 .offer-link-address { font-size: 11px; color: #6f7c66; overflow-wrap: anywhere; }
 .promotions-section { border-top: 1px solid #dce0d5; margin-top: 32px; }
 .trip-links button { flex: 1; padding: 11px 8px; font-size: 11px; }
+.promotion-dates { margin: 18px 0; font-size: 13px; }
+.promotion-dates p { margin: 6px 0; }
+.promotion-dates strong { font-weight: 600; }
+.offer-card > .text-button { display: block; margin-top: 10px; }
 @media (max-width: 650px) { .offer-facts { grid-template-columns: 1fr; } }

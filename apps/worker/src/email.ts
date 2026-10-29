@@ -15,7 +15,7 @@ export function digestText(sections: { name: string; offers: Offer[]; discoverie
       + `Quote ${o.booking!.reference}: ${o.booking!.description}\n`
       + `${o.destination} · ${o.departureDate} to ${o.returnDate} · ${o.type}\n${o.url}\n`
       + `Included: ${o.inclusions.join(', ') || 'Check with provider'}\nSwimming: ${o.swimmingEvidence || 'Not verified'}\nChecked: ${o.checkedAt}\n`),
-    ...(s.discoveries?.length ? ['Promotions — not confirmed family quotes:', ...s.discoveries.slice(0, 10).map(d =>
+    ...(s.discoveries?.some(d => d.type !== 'flight') ? ['Promotions — not confirmed family quotes:', ...s.discoveries.filter(d => d.type !== 'flight').slice(0, 10).map(d =>
       `${d.title} — from ${money({ totalMinor: d.fromMinor, currency: d.currency })} (${d.priceUnit === 'person' ? 'per person' : d.priceUnit === 'room-night' ? 'per room/night; verify basis' : d.priceUnit === 'advertised-stay' ? 'advertised stay' : 'price basis unspecified'})\n`
       + `${d.conditions}\nLink opens ${d.linkKind === 'search' ? 'an advertised search' : d.linkKind === 'property' ? 'a hotel page' : 'a promotion/destination page'}; no individual quote.\n${d.url}\nChecked: ${d.checkedAt}\n`)] : []), '']),
   `Prices and availability may change. Confirm all details directly with the provider.`,

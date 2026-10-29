@@ -7,7 +7,7 @@ export function MessageModal({ message, error = false, onDismiss }: {
   const titleId = useId();
   const descriptionId = useId();
 
-  return <FullWindowDialog titleId={titleId} descriptionId={descriptionId} error={error} onDismiss={onDismiss}>
+  return <FullWindowDialog titleId={titleId} descriptionId={descriptionId} error={error} className="message-alert" onDismiss={onDismiss}>
     <div className="message-content">
       <p className="eyebrow">GOOD HOLIDAY DEALS</p>
       <span className="message-icon" aria-hidden="true">{error ? '!' : '✓'}</span>

@@ -1,0 +1,14 @@
+.flight-list { display: grid; gap: 12px; }
+.flight-row { display: grid; grid-template-columns: minmax(140px,1fr) minmax(250px,1.2fr) auto auto; align-items: center; gap: 24px; padding: 22px; background: #fffef9; border: 1px solid #dce0d5; border-radius: 8px; }
+.flight-route h4 { margin: 0 0 5px; font-size: 17px; }
+.flight-route p { margin: 0; font-size: 12px; color: #6f7c66; overflow-wrap: anywhere; }
+.flight-route small { display: block; margin-top: 5px; font-size: 10px; color: #7d8774; }
+.flight-date-pair { margin: 0; font-size: 14px; font-weight: 600; }
+.flight-date-pair span { display: inline-block; }
+.flight-price { display: grid; gap: 4px; }
+.flight-price strong { white-space: nowrap; font-size: 21px; }
+.flight-price small { font-size: 11px; font-weight: 400; }
+.flight-price > span { font-size: 12px; color: #6f7c66; }
+.flight-actions { display: grid; justify-items: center; gap: 6px; }
+@media(max-width:1100px) { .flight-row { grid-template-columns: 1fr 1fr; gap: 16px; } .flight-actions { justify-items: start; } }
+@media(max-width:650px) { .flight-row { grid-template-columns: 1fr; padding: 20px; } .flight-date-pair { font-size: 13px; } .flight-actions { display: flex; align-items: center; gap: 20px; } }
