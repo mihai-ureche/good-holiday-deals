@@ -1,0 +1,36 @@
+import { z } from 'zod';
+import { config } from '../../api/src/config.js';
+import { money, type Offer } from '../../../packages/shared/src/index.js';
+
+export function digestText(sections: { name: string; offers: Offer[]; status: string }[], appUrl: string) {
+  return ['Your morning travel shortlist', '', ...sections.flatMap(s => [s.name, s.status,
+    ...s.offers.slice(0, 15).map(o => `${o.title} — ${money(o)} (${o.priceBasis === 'family-total' ? 'family total' : 'indicative price'})\n`
+      + `${o.destination} · ${o.departureDate} to ${o.returnDate} · ${o.type}\n${o.url}\n`
+      + `Included: ${o.inclusions.join(', ') || 'Check with provider'}\nSwimming: ${o.swimmingEvidence || 'Not verified'}\nChecked: ${o.checkedAt}\n`), '']),
+  `Prices and availability may change. Confirm all details directly with the provider.`,
+  `View deals or pause daily emails: ${appUrl}`].join('\n');
+}
+
+let cached: { value: string; expires: number } | undefined;
+export async function graphToken(fetcher: typeof fetch = fetch) {
+  if (cached && cached.expires > Date.now()) return cached.value;
+  const response = await fetcher(`https://login.microsoftonline.com/${encodeURIComponent(config.GRAPH_TENANT_ID)}/oauth2/v2.0/token`, {
+    method: 'POST', signal: AbortSignal.timeout(20_000),
+    body: new URLSearchParams({ client_id: config.GRAPH_CLIENT_ID, client_secret: config.GRAPH_CLIENT_SECRET,
+      scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' }),
+  });
+  if (!response.ok) throw new Error(`Graph authentication failed (${response.status})`);
+  const data = z.object({ access_token: z.string().min(1), expires_in: z.number().positive() }).parse(await response.json());
+  cached = { value: data.access_token, expires: Date.now() + Math.max(0, data.expires_in - 120) * 1000 };
+  return cached.value;
+}
+
+export async function sendDigest(accessToken: string, email: string, content: string, fetcher: typeof fetch = fetch) {
+  const response = await fetcher(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.GRAPH_SENDER)}/sendMail`, {
+    method: 'POST', signal: AbortSignal.timeout(20_000),
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: { subject: 'Your morning travel deals',
+      body: { contentType: 'Text', content }, toRecipients: [{ emailAddress: { address: email } }] }, saveToSentItems: true }),
+  });
+  if (response.status !== 202) throw new Error(`Graph send request failed (${response.status}); verify Sent Items before retrying`);
+}
