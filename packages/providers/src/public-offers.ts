@@ -4,6 +4,8 @@ import { discoverySchema, type Discovery } from '../../shared/src/index.js';
 
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim();
 export function parsePrice(value: string): { fromMinor: number; currency: Discovery['currency'] } | null {
+  // Never collapse a published range into one apparently specific price.
+  if (/\d[\d\s.,]*\s*(?:€|EUR|RON|lei|USD|GBP|£|\$)?\s*(?:[-–—]|\bto\b|\bla\b)\s*(?:€|EUR|RON|lei|USD|GBP|£|\$)?\s*\d/i.test(value)) return null;
   const match = value.match(/(?:(€|\$|£)\s*(\d[\d\s.,]*))|(?:(\d[\d\s.,]*)\s*(€|EUR\b|RON\b|lei\b|USD\b|GBP\b|£|\$))/i);
   if (!match) return null;
   const symbol = match[1] ?? match[4]!;
@@ -22,7 +24,7 @@ function lead(provider: string, pageUrl: string, checkedAt: string, data: Omit<D
     const url = new URL(data.url, pageUrl);
     const base = new URL(pageUrl).hostname.replace(/^www\./, '');
     if (url.protocol !== 'https:' || url.username || url.password || (url.hostname !== base && !url.hostname.endsWith('.' + base))) return null;
-    return discoverySchema.parse({ ...data, url: url.href, provider, checkedAt,
+    return discoverySchema.parse({ ...data, url: url.href, sourceUrl: pageUrl, provider, checkedAt,
       externalId: createHash('sha256').update(url.href).digest('hex').slice(0, 32) });
   } catch { return null; }
 }
@@ -43,7 +45,7 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
     const cities = from === 'CITY:BUH' ? ['Bucuresti'] : [];
     // Do not infer the origin or fare basis for new site layouts we have not assessed.
     if (!cities.length || link.searchParams.get('ad') !== '1') return;
-    add({ ...price, title: `Flight to ${destination}`, destination, type: 'flight', priceUnit: 'person', url: href,
+    add({ ...price, title: `Flight to ${destination}`, destination, type: 'flight', priceUnit: 'person', url: href, linkKind: 'search',
       departureCities: cities, departureDates: [], nights: null,
       conditions: 'Advertised fare for one adult. Travel dates, baggage, child fares and family availability are not confirmed.' });
   });
@@ -53,7 +55,7 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
     const title = clean(link.text()); const href = link.attr('href');
     if (!price || !title || !href) return;
     add({ ...price, title, destination: clean(card.find('.plain-links').text()) || title,
-      type: 'stay', priceUnit: 'unspecified', url: href, departureCities: [], departureDates: [], nights: null,
+      type: 'stay', priceUnit: 'unspecified', url: href, linkKind: 'property', departureCities: [], departureDates: [], nights: null,
       conditions: 'Advertised hotel starting price. Price basis, dates, duration, transport and family occupancy require confirmation.' });
   });
   if (provider === 'travelminit') $('[data-price]').each((_, el) => {
@@ -62,18 +64,21 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
     const title = clean(card.find('.list-card__name').text()); const href = link.attr('href');
     if (!price || !title || !href) return;
     const params = new URLSearchParams(link.attr('data-urlparams') ?? '');
+    const offerUrl = new URL(href, pageUrl);
+    // Retain the dates and occupancy supplied alongside the property link.
+    for (const [key, value] of params) offerUrl.searchParams.set(key, value);
     const checkin = params.get('checkin'); const checkout = params.get('checkout');
     const nights = checkin && checkout ? (Date.parse(checkout) - Date.parse(checkin)) / 86400000 : null;
     const configuration = clean(card.find('.price-block__configuration').text());
     add({ ...price, title, destination: card.attr('data-item-category3') || title,
-      type: 'stay', priceUnit: 'advertised-stay', url: href, departureCities: [], departureDates: checkin ? [checkin] : [], nights,
+      type: 'stay', priceUnit: 'advertised-stay', url: offerUrl.href, linkKind: 'property', departureCities: [], departureDates: checkin ? [checkin] : [], returnDates: checkout ? [checkout] : [], nights,
       conditions: `Advertised stay: ${configuration || 'occupancy not confirmed'}. Promotional or membership conditions may apply; your family price is not confirmed.` });
   });
   if (provider === 'christiantour') $('.cthw-card-link').each((_, el) => {
     const card = $(el); const price = parsePrice(card.find('.cthw-price').text());
     const destination = clean(card.find('.cthw-c-dest').text()); const href = card.attr('href');
     if (!price || !destination || !href || clean(card.find('.cthw-c-type').text()).toLowerCase() !== 'sejur') return;
-    add({ ...price, title: `Holiday in ${destination}`, destination, type: 'package', priceUnit: 'person', url: href,
+    add({ ...price, title: `Holiday in ${destination}`, destination, type: 'package', priceUnit: 'person', url: href, linkKind: 'destination',
       departureCities: [], departureDates: [], nights: null,
       conditions: 'Advertised holiday starting price per person. Departure airport, dates, duration, inclusions and family price are not confirmed.' });
   });
@@ -81,7 +86,7 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
     const card = $(el); const price = parsePrice(card.find('.c1ucB-price-container-price').text());
     const destination = clean(card.find('.c1ucB-subtitle').text()); const href = card.attr('href');
     if (!price || !destination || !href || !/bucure[șşs]ti/i.test(card.find('.c1ucB-title').text())) return;
-    add({ ...price, title: `Flight to ${destination}`, destination, type: 'flight', priceUnit: 'person', journey: 'unknown', url: href,
+    add({ ...price, title: `Flight to ${destination}`, destination, type: 'flight', priceUnit: 'person', journey: 'unknown', url: href, linkKind: 'destination',
       departureCities: ['Bucuresti'], departureDates: [], nights: null,
       conditions: 'Public route starting fare from Bucharest, per person. Travel dates, return fare, baggage and child pricing are not confirmed.' });
   });
@@ -91,7 +96,7 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
     const price = parsePrice(card.find('.xEtQ-secondary-text').text());
     const destination = clean(card.find('.DKKX-main-text').text());
     if (!price || !destination) return;
-    add({ ...price, title: `Flight to ${destination}`, destination, type: 'flight', priceUnit: 'person', journey: 'unknown', url: href,
+    add({ ...price, title: `Flight to ${destination}`, destination, type: 'flight', priceUnit: 'person', journey: 'unknown', url: href, linkKind: 'destination',
       departureCities: ['Bucharest'], departureDates: [], nights: null,
       conditions: 'Public route fare from the Bucharest deals page, per person. Dates, return fare and family availability need confirmation. Original source currency retained.' });
   });
@@ -105,13 +110,13 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
       if (href.startsWith('/zboruri/')) {
         const origin = title.match(/^Zbor(?:ul|uri)\s+(.+?)\s+-\s+/i)?.[1];
         if (!origin) return;
-        add({ ...price, title, destination, type: 'flight', priceUnit: 'person', journey: 'unknown', url: href,
+        add({ ...price, title, destination, type: 'flight', priceUnit: 'person', journey: 'unknown', url: href, linkKind: 'search',
           departureCities: [origin], departureDates: [], nights: null,
           conditions: 'Advertised route fare per person. Dates, return journey, baggage, transfers and family availability are not confirmed.' });
       } else if (/^\/Hoteluri-in-/.test(href)) {
-        add({ ...price, title, destination, type: 'stay', priceUnit: 'room-night', basisAssumed: true, url: href,
+        add({ ...price, title, destination, type: 'stay', priceUnit: 'room-night', basisAssumed: true, url: href, linkKind: 'destination',
           departureCities: [], departureDates: [], nights: null,
-          conditions: 'Hotel starting rate treated as one room per night for budget estimation. Nightly basis, room capacity, dates, taxes and full-stay price require confirmation.' });
+          conditions: 'Public hotel starting price. This card does not state a nightly basis, room type, dates or occupancy. Opens a destination hotel listing; select a property and rate there.' });
       }
     });
   });
@@ -122,7 +127,7 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
     const windows = [...href.matchAll(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})/g)];
     const out = windows[0]; const back = windows[1];
     const destinationCountry = title.includes(',') ? title.split(',').at(-1)!.trim() : undefined;
-    add({ ...price, title: `Flight to ${title}`, destination: title.split(',')[0]!.trim(), type: 'flight', priceUnit: 'person',
+    add({ ...price, title: `Flight to ${title}`, destination: title.split(',')[0]!.trim(), type: 'flight', priceUnit: 'person', linkKind: 'search',
       ...(destinationCountry ? { destinationCountry } : {}),
       journey: back ? 'round-trip' : 'unknown', url: href, departureCities: ['Bucharest'], departureDates: [], nights: null,
       ...(out && back ? { dateWindow: { earliestDeparture: out[1]!, latestDeparture: out[2]!, earliestReturn: back[1]!, latestReturn: back[2]! } } : {}),
@@ -138,9 +143,9 @@ export function parsePublicOffers(provider: string, html: string, pageUrl: strin
     const out = date(params.get('oym'), params.get('selectedoday'));
     const back = date(params.get('iym'), params.get('selectediday'));
     const nights = out && back ? (Date.parse(back) - Date.parse(out)) / 86400000 : null;
-    add({ ...price, title: `Flight to ${destination}`, destination, type: 'flight', priceUnit: 'person',
+    add({ ...price, title: `Flight to ${destination}`, destination, type: 'flight', priceUnit: 'person', linkKind: 'search',
       journey: params.get('rtn') === '1' ? 'round-trip' : 'unknown', url: href, departureCities: ['Bucharest'],
-      departureDates: out ? [out] : [], nights,
+      departureDates: out ? [out] : [], returnDates: back ? [back] : [], nights,
       conditions: 'Public landing-page fare per person for the advertised dates. Family availability, baggage and final provider price require confirmation. Transport search endpoints are not crawled.' });
   });
   return [...new Map(result.map(r => [r.externalId, r])).values()].slice(0, 300);

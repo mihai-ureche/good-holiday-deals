@@ -25,7 +25,7 @@ export async function runSearch(id: string, options: { userId?: string; manual?:
     const result = await collect(criteria, options.adapters);
     const combinations = combineTrips(criteria, result.offers, result.discoveries);
     const status = result.configured === 0 ? 'No live providers configured yet.'
-      : `${result.offers.length} family quotes; ${result.discoveries.length} advertised offers; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`;
+      : `${result.offers.length} specific quotes; ${result.discoveries.length} promotions; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`;
     await client.query('BEGIN');
     try {
       const exists = await client.query('SELECT id,criteria FROM searches WHERE id=$1 FOR UPDATE', [id]);

@@ -40,6 +40,15 @@ export const offerSchema = z.object({
   totalMinor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   currency: z.enum(['EUR', 'RON', 'USD', 'GBP']),
   priceBasis: z.enum(['family-total', 'indicative']),
+  // Supplied only by an adapter that obtained one identifiable quote and its
+  // offer-specific deep link. A route search or a hotel's homepage is insufficient.
+  booking: z.object({
+    reference: z.string().trim().min(1).max(200),
+    description: z.string().trim().min(1).max(1000),
+    linkKind: z.literal('specific-offer'),
+    rooms: z.number().int().min(1).max(6).optional(),
+    expiresAt: z.iso.datetime().optional(),
+  }).optional(),
   adults: z.number().int().min(1),
   childrenAges: z.array(z.number().int().min(0).max(17)),
   url: z.url().refine(v => new URL(v).protocol === 'https:', 'Provider links must use HTTPS'),
@@ -63,15 +72,30 @@ export const discoverySchema = z.object({
   priceUnit: z.enum(['person', 'advertised-stay', 'room-night', 'unspecified']),
   journey: z.enum(['one-way', 'round-trip', 'unknown']).optional(),
   basisAssumed: z.boolean().optional(),
+  linkKind: z.enum(['search', 'property', 'destination']).optional(),
+  sourceUrl: z.url().refine(v => new URL(v).protocol === 'https:').optional(),
   url: z.url().refine(v => new URL(v).protocol === 'https:', 'Provider links must use HTTPS'),
   departureCities: z.array(z.string().max(100)).max(20),
   departureDates: z.array(day).max(100),
+  returnDates: z.array(day).max(100).optional(),
   dateWindow: z.object({ earliestDeparture: day, latestDeparture: day, earliestReturn: day, latestReturn: day }).optional(),
   nights: z.number().int().min(1).max(60).nullable(),
   conditions: z.string().min(1).max(600),
   checkedAt: z.iso.datetime(),
 });
 export type Discovery = z.infer<typeof discoverySchema>;
+
+export function isSpecificOffer(offer: Offer): boolean {
+  return offer.priceBasis === 'family-total' && !!offer.booking
+    && offer.booking.linkKind === 'specific-offer'
+    && (offer.type !== 'stay' || offer.booking.rooms !== undefined)
+    && (!offer.booking.expiresAt || Date.parse(offer.booking.expiresAt) > Date.now());
+}
+
+export function specificOffers(criteria: SearchCriteria, offers: Offer[]): Offer[] {
+  return matchingOffers(criteria, offers).filter(o => isSpecificOffer(o)
+    && (o.type !== 'stay' || o.booking?.rooms === (criteria.rooms ?? 1)));
+}
 
 export function normalizedCity(value: string) {
   const v = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();

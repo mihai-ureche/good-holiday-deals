@@ -1,0 +1,12 @@
+.offer-details-content { max-width: 760px; text-align: left; }
+.offer-details-content h2 { font-size: clamp(26px, 5vw, 40px); overflow-wrap: anywhere; }
+.offer-detail-price { margin: 24px 0; font-size: 32px; font-weight: 600; }
+.offer-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+.offer-facts > div { margin: 0; }
+.offer-facts dt { font-size: 12px; }
+.offer-facts dd { font-size: 14px; overflow-wrap: anywhere; }
+.offer-detail-note { margin: 24px 0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.offer-link-address { font-size: 11px; color: #6f7c66; overflow-wrap: anywhere; }
+.promotions-section { border-top: 1px solid #dce0d5; margin-top: 32px; }
+.trip-links button { flex: 1; padding: 11px 8px; font-size: 11px; }
+@media (max-width: 650px) { .offer-facts { grid-template-columns: 1fr; } }

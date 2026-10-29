@@ -4,6 +4,7 @@ import { parsePrice, parsePublicOffers } from '../packages/providers/src/public-
 import { allowedUrl, clearSourceCache, publicPage } from '../packages/providers/src/http.js';
 import { matchingDiscoveries, searchSchema } from '../packages/shared/src/index.js';
 import { collect } from '../packages/providers/src/index.js';
+import { sourceCatalog } from '../packages/providers/src/catalog.js';
 
 const checkedAt = new Date().toISOString();
 const criteria = searchSchema.parse({ name: 'Family trip', departure: 'OTP', earliestDeparture: '2027-02-01',
@@ -26,6 +27,13 @@ test('Romanian prices retain currency and exact minor units', () => {
   assert.deepEqual(parsePrice('From $1,234.50'), { fromMinor: 123450, currency: 'USD' });
   assert.deepEqual(parsePrice('from £30'), { fromMinor: 3000, currency: 'GBP' });
 });
+test('published price ranges are rejected rather than truncated into a single price', () => {
+  for (const text of ['50–60 €', '€50 - €60', '50 EUR to 60 EUR', '50 € – 60 €']) assert.equal(parsePrice(text), null, text);
+  assert.deepEqual(parsePrice('From 50 €'), { fromMinor: 5000, currency: 'EUR' });
+});
+test('removed sources are not advertised to users', () => {
+  assert.equal(sourceCatalog.some(source => String(source.id) === 'paravion'), false);
+});
 test('requested flight providers retain route, currency, journey and known dates', () => {
   const html = `<a class="c1ucB-content" href="/zboruri/bucuresti/roma"><p class="c1ucB-title">Zboruri din Bucureşti către</p><p class="c1ucB-subtitle">Roma</p><span class="c1ucB-price-container-price">40 €</span></a>`;
   const [momondo] = parsePublicOffers('momondo', html, 'https://www.momondo.ro/zboruri-din-bucuresti', checkedAt);
@@ -41,6 +49,7 @@ test('requested flight providers retain route, currency, journey and known dates
   const sky = `<a class="BrowseListCard_BrowseListCard__card__hash" href="/transport/flights/BUCH/ROM?oym=2702&amp;iym=2702&amp;selectedoday=10&amp;selectediday=17&amp;rtn=1"><span class="BrowseListCard_DestinationTitle__hash">Rome</span><span class="QuoteLink_QuoteLink__hash">De la 160 lei</span></a>`;
   const [skyscanner] = parsePublicOffers('skyscanner', sky, 'https://www.skyscanner.ro/zboruri-de-la/buch/zboruri-ieftine-de-la-bucuresti.html', checkedAt);
   assert.deepEqual(skyscanner?.departureDates, ['2027-02-10']); assert.equal(skyscanner?.nights, 7); assert.equal(skyscanner?.journey, 'round-trip');
+  assert.deepEqual(skyscanner?.returnDates, ['2027-02-17']);
 });
 test('KAYAK groups flights and hotels by destination and exposes assumed hotel basis', () => {
   const html = `<div class="P_Ok-wrapper"><h3 class="P_Ok-title">Roma</h3>
@@ -64,6 +73,13 @@ test('four public layouts produce explicitly unconfirmed leads, not invented fam
   const travelminit = parsePublicOffers('travelminit', stayHtml, 'https://travelminit.ro/', checkedAt)[0]!;
   assert.equal(travelminit.fromMinor, 28500, 'use displayed price, not analytics or crossed-out rate');
   assert.equal(travelminit.nights, 7); assert.deepEqual(travelminit.departureDates, ['2027-02-10']);
+  assert.deepEqual(travelminit.returnDates, ['2027-02-17']);
+  const propertyLink = new URL(travelminit.url);
+  assert.equal(propertyLink.searchParams.get('checkin'), '2027-02-10');
+  assert.equal(propertyLink.searchParams.get('checkout'), '2027-02-17');
+  assert.equal(propertyLink.searchParams.get('adults'), '2');
+  assert.equal(travelminit.linkKind, 'property');
+  assert.equal(travelminit.sourceUrl, 'https://travelminit.ro/');
   const result = await collect(criteria, [{ id: 'vola', discover: async () => [vola] }]);
   assert.equal(result.offers.length, 0); assert.equal(result.discoveries.length, 1);
 });

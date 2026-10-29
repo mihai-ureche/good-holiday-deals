@@ -1,4 +1,4 @@
-import { matchingOffers, offerSchema, discoverySchema, matchingDiscoveries, normalizedCity, type Offer, type Discovery, type SearchCriteria } from '../../shared/src/index.js';
+import { specificOffers, offerSchema, discoverySchema, matchingDiscoveries, normalizedCity, type Offer, type Discovery, type SearchCriteria } from '../../shared/src/index.js';
 import { sourceCatalog } from './catalog.js';
 import { publicPage } from './http.js';
 import { parsePublicOffers } from './public-offers.js';
@@ -38,7 +38,7 @@ export async function collect(criteria: SearchCriteria, adapters = providers) {
     }
   }
   const unique = new Map<string, Offer>();
-  for (const offer of matchingOffers(criteria, offers)) unique.set(`${offer.provider}:${offer.externalId}`, offer);
+  for (const offer of specificOffers(criteria, offers)) unique.set(`${offer.provider}:${offer.externalId}`, offer);
   const leads = new Map<string, Discovery>();
   for (const value of matchingDiscoveries(criteria, discoveries)) leads.set(`${value.provider}:${value.externalId}`, value);
   return { offers: [...unique.values()], discoveries: [...leads.values()], failures, configured: adapters.length };

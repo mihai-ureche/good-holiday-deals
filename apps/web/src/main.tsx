@@ -7,6 +7,8 @@ import './trips.css';
 import './destinations.css';
 import { TripResults, type ListedTrip } from './TripResults.js';
 import { destinationCountries, countryCode, countryName } from '../../../packages/shared/src/destinations.js';
+import { OfferDetails } from './OfferDetails.js';
+import { MessageModal } from './MessageModal.js';
 
 type Me = { email: string; digestEnabled: boolean; timezone: string; emailConfigured: boolean; providers: string[];
   sources: { id: string; name: string; url: string; mode: string; detail: string }[] };
@@ -39,6 +41,7 @@ function App() {
   const [running, setRunning] = useState<string | null>(null);
   const [priceUnit, setPriceUnit] = useState('all');
   const [leadLimit, setLeadLimit] = useState(24);
+  const [selectedOffer, setSelectedOffer] = useState<Offer | Discovery | null>(null);
 
   async function refresh() {
     const [account, saved, found, leads, combinations] = await Promise.all([api<Me>('/me'), api<Search[]>('/searches'), api<ListedOffer[]>('/offers'), api<ListedDiscovery[]>('/discoveries'), api<ListedTrip[]>('/trips')]);
@@ -70,6 +73,7 @@ function App() {
   }
 
   return <>
+    {selectedOffer && <OfferDetails offer={selectedOffer} onDismiss={() => setSelectedOffer(null)} />}
     <header className="topbar"><a className="brand" href="/"><span className="brand-mark">↗</span>good holiday<span className="brand-light">deals</span></a>
       {me ? <div className="account"><span>{me.email}</span><button className="text-button" disabled={busy} onClick={async () => {
         setBusy(true); try { await api('/logout', 'POST'); setMe(null); setSearches([]); setOffers([]); setDiscoveries([]); setTrips([]); }
@@ -77,8 +81,7 @@ function App() {
       }}>Sign out</button></div> : <span className="private-label">A little travel club</span>}
     </header>
     <main>
-      {error && <div className="alert error" role="alert">{error}</div>}
-      {notice && <div className="alert" role="status">{notice}</div>}
+      {(error || notice) && <MessageModal message={error || notice} error={!!error} onDismiss={() => { setError(''); setNotice(''); }} />}
       {loading ? <p className="loading">Opening your travel notebook…</p> : !me ? <Auth onSuccess={refresh} /> : <>
         <section className="hero"><div><p className="eyebrow">LESS SEARCHING. MORE GOING.</p><h1>Your next good<br />holiday starts here<span>.</span></h1>
           <p className="intro">A wish list for your family. Fresh possibilities each morning.<br className="desktop-break" /> The final choice is always yours.</p></div>
@@ -128,7 +131,7 @@ function App() {
                 <button className="text-button muted" disabled={busy} onClick={() => { if (window.confirm(`Delete “${s.name}”?`)) void action(() => api(`/searches/${s.id}`, 'DELETE'), 'Search deleted.'); }}>Delete</button></div>
             </article>)}</div>}
         </section>
-        <section className="section"><div className="section-heading"><div><p className="eyebrow">02 / THE POSSIBILITIES</p><h2>Deals worth a look<span className="count">{visible.length + publicOffers.length + visibleTrips.length}</span></h2></div></div>
+        <section className="section"><div className="section-heading"><div><p className="eyebrow">02 / THE POSSIBILITIES</p><h2>Specific offers<span className="count">{visible.length + visibleTrips.length}</span></h2></div></div>
           <div className="filters"><label>Search<select value={searchId} onChange={e => setSearchId(e.target.value)}><option value="all">All searches</option>{searches.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
             <label>Type<select value={type} onChange={e => setType(e.target.value)}><option value="all">All types</option><option value="flight-stay">Flight + accommodation</option><option value="package">Packages</option><option value="flight">Flights</option><option value="stay">Stays</option></select></label>
             <label>Currency<select value={currency} onChange={e => setCurrency(e.target.value)}>{['EUR', 'RON', 'USD', 'GBP'].map(c => <option key={c}>{c}</option>)}</select></label>
@@ -137,17 +140,19 @@ function App() {
           </div>
           <p className="filter-note">Prices are compared within one currency. Packages, flights, and stays include different things.</p>
           {running && <p className="search-progress" role="status">Checking public sources. The first search can take up to five minutes; cached results are faster.</p>}
-          {(type === 'all' || type === 'flight-stay') && <TripResults trips={visibleTrips} sort={sort} />}
-          <h3 className="results-heading">Confirmed family totals <span className="count">{visible.length}</span></h3>
-          {!visible.length ? <div className="empty compact"><h3>No confirmed family quotes yet.</h3><p>Public promotions appear below. Their advertised starting prices do not confirm availability or the total for your family.</p></div> :
+          {(type === 'all' || type === 'flight-stay') && <TripResults trips={visibleTrips} sort={sort} onSelect={setSelectedOffer} />}
+          <h3 className="results-heading">Individual quoted offers <span className="count">{visible.length}</span></h3>
+          {!visible.length ? <div className="empty compact"><h3>No specific quoted offers yet.</h3><p>The current sources provide public promotions. An exact flight or room quote needs a provider integration with a specific offer link, dates and a quoted total. Promotions appear separately below.</p></div> :
             <div className="offer-grid">{visible.map(o => <article className="offer-card" key={`${o.searchId}:${o.provider}:${o.externalId}`}>
               <div className="card-top"><span className="tag">{o.type}</span><span>{o.provider}</span></div><p className="eyebrow">{o.destination}</p><h3>{o.title}</h3>
               <p>{o.departureDate} → {o.returnDate}</p><strong className="price">{money(o)}</strong><p>{o.priceBasis === 'family-total' ? 'Total for your family' : 'Indicative price · family total unverified'}</p>
               <p className="preference">{o.inclusions.join(' · ') || 'Confirm inclusions with provider'}</p><p>Swimming: {o.swimmingEvidence || 'Not verified'}</p>
-              <small>Checked {new Date(o.checkedAt).toLocaleString()} · {o.searchName}</small><a className="primary provider-link" href={o.url} target="_blank" rel="noopener noreferrer">View at provider ↗</a>
+              <small>Checked {new Date(o.checkedAt).toLocaleString()} · {o.searchName}</small><button type="button" className="primary provider-link" onClick={() => setSelectedOffer(o)}>View this offer</button>
             </article>)}</div>}
-          <div className="advertised-heading"><div><h3 className="results-heading">Advertised offers to explore <span className="count">{publicOffers.length}</span></h3>
-            <p className="filter-note">Starting prices from provider pages. Unknown dates, airports, swimming conditions and family suitability require checking. Prices are grouped by their stated basis before sorting.</p></div>
+        </section>
+        <section className="section promotions-section" aria-label="Public promotions">
+          <div className="advertised-heading"><div><h3 className="results-heading">Promotions · starting prices <span className="count">{publicOffers.length}</span></h3>
+            <p className="filter-note">These are public advertisements. They may open a route search or hotel page; they are not individual bookable quotes. Open a promotion to see exactly what was found and which details are unconfirmed.</p></div>
             <label>Price basis<select value={priceUnit} onChange={e => { setPriceUnit(e.target.value); setLeadLimit(24); }}><option value="all">All price bases</option><option value="person">Per person</option><option value="advertised-stay">Advertised stay</option><option value="room-night">Room/night (check basis)</option><option value="unspecified">Unspecified basis</option></select></label></div>
           {!publicOffers.length ? <div className="empty compact"><h3>No advertised offers for these filters yet.</h3><p>Choose Search now on an active search. Check the source status on your search card if a provider is unavailable.</p></div> :
             <div className="offer-grid">{publicOffers.slice(0, leadLimit).map(o => <article className="offer-card advertised-card" key={`${o.searchId}:${o.provider}:${o.externalId}`}>
@@ -156,7 +161,7 @@ function App() {
               <p className="price-basis">{o.priceUnit === 'person' ? 'Per person · family total unconfirmed' : o.priceUnit === 'room-night' ? 'Room/night assumed · check basis and capacity' : o.priceUnit === 'advertised-stay' ? 'Advertised stay · family total unconfirmed' : 'Price basis unspecified · family total unconfirmed'}</p>
               <p>{o.departureDates.length ? `Advertised departure: ${o.departureDates.join(', ')}` : o.dateWindow ? `Advertised departure window: ${o.dateWindow.earliestDeparture} – ${o.dateWindow.latestDeparture}` : 'Travel dates not confirmed'}{o.nights ? ` · ${o.nights} nights` : ''}</p>
               <p className="preference">{o.conditions}</p><small>Checked {new Date(o.checkedAt).toLocaleString()} · {o.searchName}</small>
-              <a className="primary provider-link" href={o.url} target="_blank" rel="noopener noreferrer">Check dates & family price ↗</a>
+              <button type="button" className="primary provider-link" onClick={() => setSelectedOffer(o)}>View promotion details</button>
             </article>)}</div>}
           {publicOffers.length > leadLimit && <button className="text-button" onClick={() => setLeadLimit(leadLimit + 24)}>Show more advertised offers</button>}
         </section>
@@ -178,7 +183,7 @@ function Auth({ onSuccess }: { onSuccess: () => Promise<void> }) {
       catch (e) { setError((e as Error).message); } finally { setBusy(false); }
     }}><p className="eyebrow">YOUR PRIVATE TRAVEL NOTEBOOK</p><h2>{register ? 'You’re invited.' : 'Welcome back.'}</h2>
       <p>{register ? 'Use the email and code from your invitation.' : 'Sign in to see what’s out there.'}</p>
-      {error && <p className="error-text" role="alert">{error}</p>}
+      {error && <MessageModal message={error} error onDismiss={() => setError('')} />}
       <label>Email<input name="email" type="email" autoComplete="email" required maxLength={254} /></label>
       <label>Password<input name="password" type="password" autoComplete={register ? 'new-password' : 'current-password'} required minLength={12} maxLength={128} /></label>
       {register && <><small>Use at least 12 characters.</small><label>Invitation code<input name="invitation" autoComplete="off" required minLength={64} maxLength={64} /></label></>}
@@ -214,7 +219,7 @@ function SearchForm({ onSave, busy }: { onSave: (data: SearchCriteria) => Promis
       tripTypes: f.getAll('tripTypes') as SearchCriteria['tripTypes'], swimming: f.get('swimming') as SearchCriteria['swimming'],
       preferences: String(f.get('preferences')), active: true });
   }}><div className="form-heading"><h3>A new possibility</h3><p>Keep the dates flexible. Tell us what matters.</p></div>
-    {localError && <p role="alert" className="error-text">{localError}</p>}
+    {localError && <MessageModal message={localError} error onDismiss={() => setLocalError('')} />}
     <div className="form-grid"><label>Give this search a name<input name="name" placeholder="A sunny February escape" required maxLength={100} /></label>
       <label>Departure city or airport<input name="departure" placeholder="Bucharest / OTP" required minLength={2} maxLength={120} /></label>
       <DestinationFields />
@@ -224,7 +229,7 @@ function SearchForm({ onSave, busy }: { onSave: (data: SearchCriteria) => Promis
       <label>Maximum nights<input name="maxNights" type="number" min={1} max={60} defaultValue={8} required /></label>
       <label>Adults<input name="adults" type="number" min={1} max={8} defaultValue={2} required /></label>
       <label>Children’s ages at departure<input name="childrenAges" placeholder="e.g. 4, 8 (leave empty if none)" maxLength={30} /></label>
-      <label>Rooms for the stay budget<input name="rooms" type="number" min={1} max={6} defaultValue={1} required /></label>
+      <label>Rooms for your stay<input name="rooms" type="number" min={1} max={6} defaultValue={1} required /></label>
       <label>Price currency<select name="currency">{['EUR', 'RON', 'USD', 'GBP'].map(c => <option key={c}>{c}</option>)}</select></label>
       <label>Swimming preference<select name="swimming"><option value="any">No preference</option><option value="sea">Sea swimming</option><option value="heated-pool">Heated pool</option><option value="either">Sea or heated pool</option></select></label>
     </div>

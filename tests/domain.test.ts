@@ -7,7 +7,7 @@ import { hashPassword, verifyPassword } from '../apps/api/src/auth.js';
 const search = searchSchema.parse({ name: 'February sun', departure: 'Bucharest', earliestDeparture: '2027-02-01',
   latestReturn: '2027-02-28', minNights: 5, maxNights: 8, adults: 2, childrenAges: [4, 8], tripTypes: ['package', 'flight', 'stay'] });
 const offer: Offer = { provider: 'test', externalId: '1', title: 'Family stay', destination: 'A destination', type: 'package',
-  departureDate: '2027-02-10', returnDate: '2027-02-17', totalMinor: 120000, currency: 'EUR', priceBasis: 'family-total',
+  departureDate: '2027-02-10', returnDate: '2027-02-17', totalMinor: 120000, currency: 'EUR', priceBasis: 'family-total', booking: { reference: 'test-quote', description: 'Specific package for the selected party and dates.', linkKind: 'specific-offer' },
   adults: 2, childrenAges: [8, 4], url: 'https://example.com/offer', inclusions: ['Flights', 'Hotel'],
   swimming: 'unknown', swimmingEvidence: 'Not verified', checkedAt: '2026-10-29T08:00:00.000Z' };
 

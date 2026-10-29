@@ -12,7 +12,7 @@ const flight: Discovery = { provider: 'test', externalId: 'flight', title: 'A fl
   departureCities: ['Bucharest'], departureDates: [], nights: null, conditions: 'Dates and family price unconfirmed.', checkedAt: new Date().toISOString() };
 const stay: Discovery = { ...flight, externalId: 'stay', destination: 'Rome', type: 'stay', priceUnit: 'room-night', departureCities: [] };
 const quote: Offer = { provider: 'test', externalId: 'quote', title: 'A family package', destination: 'Athens', type: 'package',
-  departureDate: '2027-02-10', returnDate: '2027-02-17', totalMinor: 100000, currency: 'EUR', priceBasis: 'family-total',
+  departureDate: '2027-02-10', returnDate: '2027-02-17', totalMinor: 100000, currency: 'EUR', priceBasis: 'family-total', booking: { reference: 'test-quote', description: 'Specific package for the selected party and dates.', linkKind: 'specific-offer' },
   adults: 2, childrenAges: [], url: 'https://example.com/package', inclusions: [], swimming: 'unknown', swimmingEvidence: '', checkedAt: new Date().toISOString() };
 
 test('old searches and blank destination fields keep all countries', () => {
@@ -59,7 +59,7 @@ test('collection filters quotes and public discoveries before saving, including 
       { ...flight, externalId: 'unknown', destination: 'Unknown' }] }]);
   assert.deepEqual(result.offers.map(o => o.externalId), ['italy']);
   assert.deepEqual(result.discoveries.map(o => o.externalId), ['flight', 'stay']);
-  assert.equal(combineTrips(target, [], result.discoveries).length, 1);
+  assert.equal(combineTrips(target, [], result.discoveries).length, 0);
   assert.equal(combineTrips({ ...target, targetCity: 'Venice' }, [], [flight, stay]).length, 0);
   assert.equal(matchingOffers({ ...criteria, targetCountry: 'GR' }, [quote]).length, 1);
   assert.equal(matchingOffers({ ...criteria, targetCity: 'Rome' }, [quote]).length, 0);

@@ -13,7 +13,7 @@ import { searchSchema } from '../../../packages/shared/src/index.js';
 import { providers, sourceCatalog } from '../../../packages/providers/src/index.js';
 import { runSearch } from './search-runner.js';
 import { combineTrips } from '../../../packages/shared/src/combinations.js';
-import { offerSchema, discoverySchema } from '../../../packages/shared/src/index.js';
+import { offerSchema, specificOffers } from '../../../packages/shared/src/index.js';
 import { isAllowedOrigin } from './origin.js';
 
 declare module 'fastify' { interface FastifyRequest { userId: string | null } }
@@ -163,12 +163,11 @@ export async function createApp() {
   });
   app.get('/api/trips', async request => {
     const result = await db.query(`SELECT s.id,s.criteria,
-      COALESCE((SELECT jsonb_agg(payload) FROM offers WHERE search_id=s.id), '[]'::jsonb) AS quotes,
-      COALESCE((SELECT jsonb_agg(payload) FROM discoveries WHERE search_id=s.id), '[]'::jsonb) AS leads
+      COALESCE((SELECT jsonb_agg(payload) FROM offers WHERE search_id=s.id), '[]'::jsonb) AS quotes
       FROM searches s WHERE s.user_id=$1 AND (s.criteria->>'active')::boolean=true
       AND (s.criteria->>'latestReturn')::date>=current_date`, [request.userId]);
     return result.rows.flatMap(row => combineTrips(searchSchema.parse(row.criteria),
-      row.quotes.map((value: unknown) => offerSchema.parse(value)), row.leads.map((value: unknown) => discoverySchema.parse(value)))
+      row.quotes.map((value: unknown) => offerSchema.parse(value)))
       .map(trip => ({ ...trip, searchId: row.id, searchName: row.criteria.name })));
   });
   app.get('/api/discoveries', async request => {
@@ -179,11 +178,12 @@ export async function createApp() {
     return result.rows.map(row => ({ ...row.payload, searchId: row.searchId, searchName: row.searchName }));
   });
   app.get('/api/offers', async request => {
-    const result = await db.query(`SELECT o.payload,s.id AS "searchId",s.criteria->>'name' AS "searchName"
+    const result = await db.query(`SELECT o.payload,s.criteria,s.id AS "searchId",s.criteria->>'name' AS "searchName"
       FROM offers o JOIN searches s ON s.id=o.search_id WHERE s.user_id=$1
       AND (s.criteria->>'active')::boolean=true AND (o.payload->>'checkedAt')::timestamptz>now()-interval '48 hours'
       AND (o.payload->>'departureDate')::date>=current_date`, [request.userId]);
-    return result.rows.map(row => ({ ...row.payload, searchId: row.searchId, searchName: row.searchName }));
+    return result.rows.flatMap(row => specificOffers(searchSchema.parse(row.criteria), [offerSchema.parse(row.payload)])
+      .map(offer => ({ ...offer, searchId: row.searchId, searchName: row.searchName })));
   });
   const webRoot = resolve('apps/web/dist');
   if (existsSync(webRoot)) {

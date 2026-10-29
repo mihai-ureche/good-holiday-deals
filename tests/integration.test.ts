@@ -78,9 +78,16 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
 
     providers.push({ id: 'mock-provider', search: async criteria => [{ provider: 'mock-provider', externalId: 'family-1',
       title: 'A family deal', destination: 'A sunny place', type: 'package', departureDate: '2027-02-10', returnDate: '2027-02-17',
-      totalMinor: 120000, currency: 'EUR', priceBasis: 'family-total', adults: criteria.adults, childrenAges: criteria.childrenAges,
+      totalMinor: 120000, currency: 'EUR', priceBasis: 'family-total', booking: { reference: 'package-1', description: 'Specific family package quote.', linkKind: 'specific-offer' }, adults: criteria.adults, childrenAges: criteria.childrenAges,
       url: 'https://example.com/deal', inclusions: ['Flights', 'Hotel'], swimming: 'unknown', swimmingEvidence: 'Not verified',
-      checkedAt: new Date().toISOString() }], discover: async () => [{ provider: 'mock-provider', externalId: 'ad-1',
+      checkedAt: new Date().toISOString() }, ...(['flight', 'stay'] as const).map(type => ({
+        provider: 'mock-provider', externalId: `quoted-${type}`, title: `Family ${type}`, destination: 'Rome', type,
+        departureDate: '2027-02-10', returnDate: '2027-02-17', totalMinor: type === 'flight' ? 40000 : 25000,
+        currency: 'EUR' as const, priceBasis: 'family-total' as const, adults: criteria.adults, childrenAges: criteria.childrenAges,
+        booking: { reference: `quote-${type}`, description: type === 'flight' ? 'Return flight OTP–FCO for the family.' : 'One family room, seven nights.', linkKind: 'specific-offer' as const, ...(type === 'stay' ? { rooms: 1 } : {}) },
+        url: `https://example.com/${type === 'flight' ? 'flight' : 'stay'}`, inclusions: [], swimming: 'unknown' as const,
+        swimmingEvidence: '', checkedAt: new Date().toISOString(),
+      }))], discover: async () => [{ provider: 'mock-provider', externalId: 'ad-1',
       title: 'Advertised holiday', destination: 'Test coast', type: 'package', fromMinor: 10000, currency: 'EUR', priceUnit: 'person',
       url: 'https://example.com/advert', departureCities: [], departureDates: [], nights: null,
       conditions: 'Dates and family total are not confirmed.', checkedAt: new Date().toISOString() },
@@ -103,9 +110,20 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     const combined = await app.inject({ url: '/api/trips', headers: { cookie: first.cookie } });
     assert.equal(combined.statusCode, 200);
     assert.equal(combined.json().length, 1);
-    assert.equal(combined.json()[0].confidence, 'budget-estimate');
-    assert.equal(combined.json()[0].totalMinorMin, 65000);
-    assert.equal(combined.json()[0].perPersonMinorMin, 16250);
+    assert.equal(combined.json()[0].totalMinor, 65000);
+    assert.equal(combined.json()[0].perPersonMinor, 16250);
+    assert.equal(combined.json()[0].flight.booking.reference, 'quote-flight');
+    assert.equal(combined.json()[0].stay.booking.reference, 'quote-stay');
+    assert.equal(combined.json()[0].flight.url, 'https://example.com/flight');
+    assert.equal(combined.json()[0].stay.url, 'https://example.com/stay');
+    const oldPayload = (await db.query('SELECT payload FROM offers WHERE search_id=$1 LIMIT 1', [id])).rows[0].payload;
+    delete oldPayload.booking;
+    oldPayload.externalId = 'legacy-without-quote-link';
+    await db.query('INSERT INTO offers VALUES ($1,$2,$3,$4)', [id, oldPayload.provider, oldPayload.externalId, oldPayload]);
+    const exactList = (await app.inject({ url: '/api/offers', headers: { cookie: first.cookie } })).json();
+    assert.equal(exactList.length, 3);
+    assert.equal(exactList.some((o: { externalId: string }) => o.externalId === oldPayload.externalId), false,
+      'older saved records without an individual quote link must not appear as specific offers');
     assert.deepEqual((await app.inject({ url: '/api/trips', headers: { cookie: second.cookie } })).json(), []);
     await tick(new Date('2027-01-04T06:00:00Z'));
     assert.equal(emails.length, 0, 'scheduled collection also works without email');
@@ -118,10 +136,12 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     assert.equal(emails.length, 1, 'one combined digest per user/day');
     assert.ok(JSON.stringify(emails[0]).includes('family total'));
     assert.ok(JSON.stringify(emails[0]).includes('not confirmed family quotes'));
-    assert.ok(JSON.stringify(emails[0]).includes('ILLUSTRATIVE BUDGET'));
+    assert.ok(JSON.stringify(emails[0]).includes('SUM OF QUOTED TOTALS'));
+    assert.equal(JSON.stringify(emails[0]).includes('ILLUSTRATIVE BUDGET'), false);
+    assert.ok(JSON.stringify(emails[0]).includes('quote-flight'));
     assert.ok(JSON.stringify(emails[0]).includes('https://example.com/flight'));
     assert.ok(JSON.stringify(emails[0]).includes('https://example.com/stay'));
-    assert.equal((await app.inject({ url: '/api/offers', headers: { cookie: first.cookie } })).json().length, 1);
+    assert.equal((await app.inject({ url: '/api/offers', headers: { cookie: first.cookie } })).json().length, 3);
     assert.deepEqual((await app.inject({ url: '/api/offers', headers: { cookie: second.cookie } })).json(), []);
     await app.inject({ method: 'PATCH', url: '/api/me', headers: { ...origin, cookie: first.cookie }, payload: { digestEnabled: false } });
     await tick(new Date('2027-01-02T06:00:00Z'));
@@ -144,7 +164,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     assert.equal(savedTarget.targetCountry, 'IT'); assert.equal(savedTarget.targetCity, 'Rome');
     const targetRun = await app.inject({ method: 'POST', url: `/api/searches/${targetId}/run`, headers: { ...origin, cookie: first.cookie }, payload: {} });
     assert.equal(targetRun.statusCode, 200, targetRun.body);
-    assert.equal(targetRun.json().offers, 0); assert.equal(targetRun.json().discoveries, 2); assert.equal(targetRun.json().combinations, 1);
+    assert.equal(targetRun.json().offers, 2); assert.equal(targetRun.json().discoveries, 2); assert.equal(targetRun.json().combinations, 1);
     const headers = { ...origin, cookie: first.cookie };
     assert.equal((await app.inject({ method: 'PATCH', url: `/api/searches/${targetId}`, headers: { ...origin, cookie: second.cookie },
       payload: { targetCountry: 'GR' } })).statusCode, 404);
@@ -161,7 +181,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
       payload: { targetCountry: '' } })).statusCode, 200);
     const allRun = await app.inject({ method: 'POST', url: `/api/searches/${targetId}/run`, headers, payload: {} });
     assert.equal(allRun.statusCode, 200, allRun.body);
-    assert.equal(allRun.json().offers, 1); assert.equal(allRun.json().discoveries, 3);
+    assert.equal(allRun.json().offers, 3); assert.equal(allRun.json().discoveries, 3);
 
     // An edit during provider collection must not let the previous criteria repopulate results.
     const { runSearch } = await import('../apps/api/src/search-runner.js');
