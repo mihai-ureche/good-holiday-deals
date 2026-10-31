@@ -85,7 +85,7 @@ function App() {
           </div>
         </section>
         <div className="source-note"><span>◌</span><div><strong>{me.providers.length} live travel API provider{me.providers.length === 1 ? '' : 's'} connected.</strong>
-          <p>{me.liveFlightPricing ? 'Live dated round trips are connected.' : 'Add an Ignav key or Duffel token for flights.'} {me.liveStayPricing ? 'Live accommodation quotes are connected through Duffel.' : 'Add Duffel with Stays access for accommodation.'}</p>
+          <p>{me.liveFlightPricing ? 'Live dated round trips are connected.' : 'Connect Ignav, Duffel, or Sabre for flights.'} {me.liveStayPricing ? 'Live accommodation quotes are connected.' : 'Connect Duffel Stays or Sabre lodging for accommodation.'}</p>
           <details className="source-details"><summary>View your travel sources</summary><div className="source-grid">{me.sources.map(source =>
             <div key={source.id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.name} ↗</a>
               <span className="source-mode">{source.mode === 'live-flights-stays' ? 'Live flight + stay quotes connected' : source.mode === 'live-flights' ? 'Live flight quotes connected' : 'API credentials required'}</span><small>{source.detail}</small></div>)}</div></details>

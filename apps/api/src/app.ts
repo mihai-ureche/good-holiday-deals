@@ -10,7 +10,7 @@ import { db } from './db.js';
 import { config } from './config.js';
 import { hashPassword, hashToken, token, verifyPassword } from './auth.js';
 import { searchObjectSchema, searchSchema } from '../../../packages/shared/src/index.js';
-import { destinationCities, duffelDestinationAirports, ignavDestinationAirports, providers, sourceCatalog } from '../../../packages/providers/src/index.js';
+import { destinationCities, duffelDestinationAirports, ignavDestinationAirports, providers, sabreDestinationAirports, sourceCatalog } from '../../../packages/providers/src/index.js';
 import { countryCode } from '../../../packages/shared/src/destinations.js';
 import { runSearch } from './search-runner.js';
 import { combineTrips } from '../../../packages/shared/src/combinations.js';
@@ -128,10 +128,16 @@ export async function createApp() {
       .parse(request.query.country);
     if (process.env.IGNAV_API_KEY) {
       try { return { airports: await ignavDestinationAirports(country, process.env.IGNAV_API_KEY) }; }
-      catch (error) { if (!process.env.DUFFEL_ACCESS_TOKEN) throw error; }
+      catch (error) { if (!process.env.DUFFEL_ACCESS_TOKEN && !(process.env.SABRE_USER_ID && process.env.SABRE_PASSWORD)) throw error; }
     }
-    if (process.env.DUFFEL_ACCESS_TOKEN) return { airports: await duffelDestinationAirports(country, process.env.DUFFEL_ACCESS_TOKEN) };
-    return reply.code(503).send({ error: 'Add an Ignav API key or Duffel access token to load destination airports' });
+    if (process.env.DUFFEL_ACCESS_TOKEN) {
+      try { return { airports: await duffelDestinationAirports(country, process.env.DUFFEL_ACCESS_TOKEN) }; }
+      catch (error) { if (!(process.env.SABRE_USER_ID && process.env.SABRE_PASSWORD)) throw error; }
+    }
+    if (process.env.SABRE_USER_ID && process.env.SABRE_PASSWORD) return { airports: await sabreDestinationAirports(country, {
+      userId: process.env.SABRE_USER_ID, password: process.env.SABRE_PASSWORD,
+      environment: process.env.SABRE_ENVIRONMENT === 'production' ? 'production' : 'cert' }) };
+    return reply.code(503).send({ error: 'Add Ignav, Duffel, or Sabre credentials to load destination airports' });
   });
   app.patch('/api/me', async request => {
     const body = z.object({ digestEnabled: z.boolean() }).parse(request.body);

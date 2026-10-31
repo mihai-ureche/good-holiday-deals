@@ -25,7 +25,7 @@ export function FlightResults({ offers, connected, onSelect }: {
     {!flights.length ? <div className="empty compact">
       <h3>{connected ? 'No matching round-trip quotes.' : 'Live flight pricing is not connected yet.'}</h3>
       <p>{connected ? 'No current round-trip quotes match these dates, travelers and filters.'
-        : 'Add an Ignav API key or Duffel access token to check return flights and prices for your whole party.'}</p>
+        : 'Connect Ignav, Duffel, or Sabre to check return flights and prices for your whole party.'}</p>
     </div> : <div className="flight-airports">{[...airports].map(([key, group]) => <section className="flight-airport" key={key} aria-label={group[0]!.offer.destination}>
       <h4 className="flight-airport-heading">{group[0]!.offer.destination}<small>{group[0]!.offer.searchName ?? group[0]!.offer.provider}</small></h4>
       <div className="flight-list">{group.map(({ offer, price }, index) => <article className="flight-row" key={`${offer.searchId ?? ''}:${offer.provider}:${offer.externalId}`}>

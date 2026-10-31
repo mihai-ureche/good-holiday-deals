@@ -1,10 +1,12 @@
 import { specificOffers, offerSchema, discoverySchema, matchingDiscoveries, type Offer, type Discovery, type SearchCriteria } from '../../shared/src/index.js';
 import { createIgnavLiveProvider } from './ignav-live.js';
 import { createDuffelLiveProvider } from './duffel-live.js';
+import { createSabreLiveProvider } from './sabre-live.js';
 export { sourceCatalog } from './catalog.js';
 export { destinationCities, majorDestinationCities } from './destination-cities.js';
 export { createIgnavLiveProvider, ignavDestinationAirports } from './ignav-live.js';
 export { createDuffelLiveProvider, duffelDestinationAirports } from './duffel-live.js';
+export { createSabreLiveProvider, sabreDestinationAirports } from './sabre-live.js';
 
 export interface TravelProvider {
   id: string;
@@ -20,6 +22,10 @@ export const providers: TravelProvider[] = [
   ...(process.env.IGNAV_API_KEY ? [createIgnavLiveProvider({ apiKey: process.env.IGNAV_API_KEY })] : []),
   ...(process.env.DUFFEL_ACCESS_TOKEN ? [createDuffelLiveProvider({ accessToken: process.env.DUFFEL_ACCESS_TOKEN,
     appUrl: process.env.DUFFEL_LINKS_APP_URL || process.env.APP_URL || 'http://localhost:3000' })] : []),
+  ...(process.env.SABRE_USER_ID && process.env.SABRE_PASSWORD && process.env.SABRE_PCC && process.env.SABRE_BOOKING_URL
+    ? [createSabreLiveProvider({ userId: process.env.SABRE_USER_ID, password: process.env.SABRE_PASSWORD,
+      pseudoCityCode: process.env.SABRE_PCC, bookingUrl: process.env.SABRE_BOOKING_URL,
+      environment: process.env.SABRE_ENVIRONMENT === 'production' ? 'production' : 'cert' })] : []),
 ];
 
 export async function collect(criteria: SearchCriteria, adapters = providers) {
