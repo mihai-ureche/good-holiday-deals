@@ -1,35 +1,26 @@
-import { specificOffers, offerSchema, discoverySchema, matchingDiscoveries, normalizedCity, type Offer, type Discovery, type SearchCriteria } from '../../shared/src/index.js';
-import { sourceCatalog } from './catalog.js';
-import { publicPage } from './http.js';
-import { parsePublicOffers } from './public-offers.js';
+import { specificOffers, offerSchema, discoverySchema, matchingDiscoveries, type Offer, type Discovery, type SearchCriteria } from '../../shared/src/index.js';
 import { createIgnavLiveProvider } from './ignav-live.js';
+import { createDuffelLiveProvider } from './duffel-live.js';
 export { sourceCatalog } from './catalog.js';
 export { destinationCities, majorDestinationCities } from './destination-cities.js';
 export { createIgnavLiveProvider, ignavDestinationAirports } from './ignav-live.js';
+export { createDuffelLiveProvider, duffelDestinationAirports } from './duffel-live.js';
 
 export interface TravelProvider {
   id: string;
   liveRoundTripFlights?: boolean;
+  liveStays?: boolean;
   timeoutMs?: number;
   // Adapters must respect AbortSignal, use a fixed allowlisted origin, and return party-specific quotes.
   search?(criteria: SearchCriteria, signal: AbortSignal): Promise<Offer[]>;
   discover?(criteria: SearchCriteria, signal: AbortSignal): Promise<Discovery[]>;
 }
 
-const publicProviders: TravelProvider[] = sourceCatalog.filter(s => s.mode === 'public-offers').map(source => ({
-  id: source.id,
-  discover: async (criteria, signal) => {
-    if (['momondo', 'kiwi', 'cheapflights', 'skyscanner'].includes(source.id) && normalizedCity(criteria.departure) !== 'bucuresti') return [];
-    const url = 'crawlUrl' in source && typeof source.crawlUrl === 'string' ? source.crawlUrl : source.url;
-    const page = await publicPage(url, signal);
-    const results = parsePublicOffers(source.id, page.html, page.url, page.checkedAt);
-    if (!results.length) throw new Error('The public page did not expose supported offer cards');
-    return results;
-  },
-}));
-
-export const providers: TravelProvider[] = [...publicProviders,
-  ...(process.env.IGNAV_API_KEY ? [createIgnavLiveProvider({ apiKey: process.env.IGNAV_API_KEY })] : [])];
+export const providers: TravelProvider[] = [
+  ...(process.env.IGNAV_API_KEY ? [createIgnavLiveProvider({ apiKey: process.env.IGNAV_API_KEY })] : []),
+  ...(process.env.DUFFEL_ACCESS_TOKEN ? [createDuffelLiveProvider({ accessToken: process.env.DUFFEL_ACCESS_TOKEN,
+    appUrl: process.env.DUFFEL_LINKS_APP_URL || process.env.APP_URL || 'http://localhost:3000' })] : []),
+];
 
 export async function collect(criteria: SearchCriteria, adapters = providers) {
   const offers: Offer[] = [];

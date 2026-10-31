@@ -28,9 +28,12 @@ export async function runSearch(id: string, options: { userId?: string; manual?:
     const combinations = combineTrips(criteria, result.offers, result.discoveries);
     const missingFlightSource = criteria.tripTypes.includes('flight')
       && !(options.adapters ?? providers).some(provider => provider.liveRoundTripFlights && provider.search);
-    const status = (result.configured === 0 ? 'No quote providers configured for this search.'
-      : `${result.offers.length} specific quotes; ${result.discoveries.length} promotions; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`)
-      + (missingFlightSource ? ' Live round-trip flight pricing is not connected. Add a free Ignav API key to the backend.' : '');
+    const missingStaySource = criteria.tripTypes.includes('stay')
+      && !(options.adapters ?? providers).some(provider => provider.liveStays && provider.search);
+    const status = (result.configured === 0 ? 'No live API provider is configured for this search.'
+      : `${result.offers.length} specific quotes; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable providers: ${result.failures.join(', ')}.` : ''}`)
+      + (missingFlightSource ? ' Live round-trip flight pricing is not connected.' : '')
+      + (missingStaySource ? ' Live accommodation pricing is not connected.' : '');
     await client.query('BEGIN');
     try {
       const exists = await client.query('SELECT id,criteria FROM searches WHERE id=$1 FOR UPDATE', [id]);

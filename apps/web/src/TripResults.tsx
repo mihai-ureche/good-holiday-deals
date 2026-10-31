@@ -13,7 +13,7 @@ export function TripResults({ trips, sort, onSelect }: { trips: ListedTrip[]; so
     <div className="advertised-heading"><div><h3 className="results-heading">Flight + accommodation <span className="count">{trips.length}</span></h3>
       <p className="filter-note">Two specific quotes with matching dates and travelers. One total price; flight and accommodation are booked separately.</p></div>
       <label>Show prices<select value={basis} onChange={e => setBasis(e.target.value)}><option value="total">Total for all travelers</option><option value="person">Average per person</option></select></label></div>
-    {!trips.length ? <div className="empty compact"><h3>No flight + stay combinations yet.</h3><p>A combination needs a specific flight quote and room quote for matching dates and travelers. Public promotions are listed separately below and are not added into an estimated budget.</p></div> :
+    {!trips.length ? <div className="empty compact"><h3>No flight + stay combinations yet.</h3><p>A combination needs a specific flight quote and room quote for matching dates and travelers.</p></div> :
       <div className="offer-grid">{sorted.slice(0, limit).map(t => <article className="offer-card trip-card" key={`${t.searchId}:${t.id}`}>
         <div className="card-top"><span className="tag">Sum of quoted totals</span><span>Flight + stay</span></div>
         <p className="eyebrow">{t.searchName}</p><h3>{t.destination}</h3>

@@ -10,7 +10,7 @@ import { db } from './db.js';
 import { config } from './config.js';
 import { hashPassword, hashToken, token, verifyPassword } from './auth.js';
 import { searchObjectSchema, searchSchema } from '../../../packages/shared/src/index.js';
-import { destinationCities, ignavDestinationAirports, providers, sourceCatalog } from '../../../packages/providers/src/index.js';
+import { destinationCities, duffelDestinationAirports, ignavDestinationAirports, providers, sourceCatalog } from '../../../packages/providers/src/index.js';
 import { countryCode } from '../../../packages/shared/src/destinations.js';
 import { runSearch } from './search-runner.js';
 import { combineTrips } from '../../../packages/shared/src/combinations.js';
@@ -107,9 +107,14 @@ export async function createApp() {
   app.get('/api/me', async request => {
     const result = await db.query('SELECT email,digest_enabled AS "digestEnabled" FROM users WHERE id=$1', [request.userId]);
     const liveFlightPricing = providers.some(provider => provider.liveRoundTripFlights && provider.search);
+    const liveStayPricing = providers.some(provider => provider.liveStays && provider.search);
     return { ...result.rows[0], timezone: config.DIGEST_TIMEZONE, emailConfigured: config.EMAIL_MODE === 'graph',
-      providers: providers.map(p => p.id), sources: sourceCatalog.map(source => source.id === 'ignav' && liveFlightPricing
-        ? { ...source, mode: 'live-flights', detail: 'Live party-priced round-trip search is connected.' } : source), liveFlightPricing };
+      providers: providers.map(p => p.id), sources: sourceCatalog.map(source => {
+        const provider = providers.find(value => value.id === source.id);
+        if (provider?.liveRoundTripFlights && provider.liveStays) return { ...source, mode: 'live-flights-stays', detail: 'Live flight and accommodation search is connected.' };
+        if (provider?.liveRoundTripFlights) return { ...source, mode: 'live-flights', detail: 'Live party-priced round-trip search is connected.' };
+        return source;
+      }), liveFlightPricing, liveStayPricing };
   });
   app.get<{ Querystring: { country?: string } }>('/api/destinations/cities', async request => {
     const country = z.string().trim().length(2).transform(value => value.toUpperCase())
@@ -121,8 +126,12 @@ export async function createApp() {
     const country = z.string().trim().length(2).transform(value => value.toUpperCase())
       .refine(value => countryCode(value) === value, 'Choose a valid destination country')
       .parse(request.query.country);
-    if (!process.env.IGNAV_API_KEY) return reply.code(503).send({ error: 'Add an Ignav API key to load destination airports' });
-    return { airports: await ignavDestinationAirports(country, process.env.IGNAV_API_KEY) };
+    if (process.env.IGNAV_API_KEY) {
+      try { return { airports: await ignavDestinationAirports(country, process.env.IGNAV_API_KEY) }; }
+      catch (error) { if (!process.env.DUFFEL_ACCESS_TOKEN) throw error; }
+    }
+    if (process.env.DUFFEL_ACCESS_TOKEN) return { airports: await duffelDestinationAirports(country, process.env.DUFFEL_ACCESS_TOKEN) };
+    return reply.code(503).send({ error: 'Add an Ignav API key or Duffel access token to load destination airports' });
   });
   app.patch('/api/me', async request => {
     const body = z.object({ digestEnabled: z.boolean() }).parse(request.body);

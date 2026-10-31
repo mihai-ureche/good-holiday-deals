@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { money, isSpecificOffer, searchSchema, type Offer, type Discovery, type SavedSearch, type SearchCriteria } from '../../../packages/shared/src/index.js';
+import { money, isSpecificOffer, searchSchema, type Offer, type SavedSearch, type SearchCriteria } from '../../../packages/shared/src/index.js';
 import './style.css';
 import './sources.css';
 import './trips.css';
@@ -11,20 +11,17 @@ import { countryCode, countryName, destinationCountries,
 import { OfferDetails } from './OfferDetails.js';
 import { MessageModal } from './MessageModal.js';
 import { api } from './api.js';
-import { PromotionDates } from './PromotionDates.js';
 import { FlightResults } from './FlightResults.js';
 
-type Me = { email: string; digestEnabled: boolean; timezone: string; emailConfigured: boolean; liveFlightPricing: boolean; providers: string[];
+type Me = { email: string; digestEnabled: boolean; timezone: string; emailConfigured: boolean; liveFlightPricing: boolean; liveStayPricing: boolean; providers: string[];
   sources: { id: string; name: string; url: string; mode: string; detail: string }[] };
 type Search = SavedSearch & { lastCheckedAt: string | null; lastStatus: string | null };
 type ListedOffer = Offer & { searchId: string; searchName: string };
-type ListedDiscovery = Discovery & { searchId: string; searchName: string };
 function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [searches, setSearches] = useState<Search[]>([]);
   const [offers, setOffers] = useState<ListedOffer[]>([]);
-  const [discoveries, setDiscoveries] = useState<ListedDiscovery[]>([]);
   const [trips, setTrips] = useState<ListedTrip[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -36,13 +33,11 @@ function App() {
   const [searchId, setSearchId] = useState('all');
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
-  const [priceUnit, setPriceUnit] = useState('all');
-  const [leadLimit, setLeadLimit] = useState(24);
-  const [selectedOffer, setSelectedOffer] = useState<((Offer | Discovery) & { searchId?: string }) | null>(null);
+  const [selectedOffer, setSelectedOffer] = useState<(Offer & { searchId?: string }) | null>(null);
 
   async function refresh() {
-    const [account, saved, found, leads, combinations] = await Promise.all([api<Me>('/me'), api<Search[]>('/searches'), api<ListedOffer[]>('/offers'), api<ListedDiscovery[]>('/discoveries'), api<ListedTrip[]>('/trips')]);
-    setMe(account); setSearches(saved); setOffers(found); setDiscoveries(leads); setTrips(combinations);
+    const [account, saved, found, combinations] = await Promise.all([api<Me>('/me'), api<Search[]>('/searches'), api<ListedOffer[]>('/offers'), api<ListedTrip[]>('/trips')]);
+    setMe(account); setSearches(saved); setOffers(found); setTrips(combinations);
   }
   useEffect(() => { refresh().catch(e => { if (e.message !== 'Please sign in') setError(e.message); }).finally(() => setLoading(false)); }, []);
   async function action(task: () => Promise<unknown>, success?: string) {
@@ -54,20 +49,17 @@ function App() {
   const visible = offers.filter(o => o.currency === currency && (type === 'all' || o.type === type)
     && isSpecificOffer(o) && (searchId === 'all' || o.searchId === searchId))
     .sort((a, b) => sort === 'asc' ? a.totalMinor - b.totalMinor : b.totalMinor - a.totalMinor);
-  const publicOffers = discoveries.filter(o => o.type !== 'flight' && o.currency === currency && (type === 'all' || o.type === type)
-    && (searchId === 'all' || o.searchId === searchId) && (priceUnit === 'all' || o.priceUnit === priceUnit))
-    .sort((a, b) => a.priceUnit.localeCompare(b.priceUnit) || (sort === 'asc' ? a.fromMinor - b.fromMinor : b.fromMinor - a.fromMinor));
   const visibleTrips = trips.filter(t => t.currency === currency && (searchId === 'all' || t.searchId === searchId)
     && (type === 'all' || type === 'flight-stay'));
   const individualOffers = visible.filter(offer => offer.type !== 'flight');
   const selectedSearches = searches.filter(search => search.active && (searchId === 'all' || search.id === searchId));
   const showStayResults = selectedSearches.some(search => search.tripTypes.includes('stay'));
-  const showPromotions = type !== 'flight' && selectedSearches.some(search => search.tripTypes.some(tripType => tripType !== 'flight'));
+  const showNonFlightResults = type !== 'flight' && selectedSearches.some(search => search.tripTypes.some(tripType => tripType !== 'flight'));
   async function searchNow(search: Search) {
     setBusy(true); setRunning(search.id); setError(''); setNotice('');
     try {
       const result = await api<{ status: string }>(`/searches/${search.id}/run`, 'POST');
-      await refresh(); setSearchId(search.id); setCurrency(search.currency); setType('all'); setLeadLimit(24);
+      await refresh(); setSearchId(search.id); setCurrency(search.currency); setType('all');
       setNotice(result.status);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); setRunning(null); }
@@ -77,7 +69,7 @@ function App() {
     {selectedOffer && <OfferDetails key={`${selectedOffer.provider}:${selectedOffer.externalId}`} offer={selectedOffer} onDismiss={() => setSelectedOffer(null)} />}
     <header className="topbar"><a className="brand" href="/"><span className="brand-mark">↗</span>good holiday<span className="brand-light">deals</span></a>
       {me ? <div className="account"><span>{me.email}</span><button className="text-button" disabled={busy} onClick={async () => {
-        setBusy(true); try { await api('/logout', 'POST'); setMe(null); setSearches([]); setOffers([]); setDiscoveries([]); setTrips([]); }
+        setBusy(true); try { await api('/logout', 'POST'); setMe(null); setSearches([]); setOffers([]); setTrips([]); }
         catch (e) { setError((e as Error).message); } finally { setBusy(false); }
       }}>Sign out</button></div> : <span className="private-label">A little travel club</span>}
     </header>
@@ -92,11 +84,11 @@ function App() {
             {!me.emailConfigured && <small>Email setup pending</small>}
           </div>
         </section>
-        <div className="source-note"><span>◌</span><div><strong>{me.providers.length} public sources for stays and holiday promotions.</strong>
-          <p>{me.liveFlightPricing ? 'Search for dated round trips with a quoted total for your party.' : 'Live round-trip flight pricing is not connected. Public promotions do not provide flight quotes for your party.'}</p>
+        <div className="source-note"><span>◌</span><div><strong>{me.providers.length} live travel API provider{me.providers.length === 1 ? '' : 's'} connected.</strong>
+          <p>{me.liveFlightPricing ? 'Live dated round trips are connected.' : 'Add an Ignav key or Duffel token for flights.'} {me.liveStayPricing ? 'Live accommodation quotes are connected through Duffel.' : 'Add Duffel with Stays access for accommodation.'}</p>
           <details className="source-details"><summary>View your travel sources</summary><div className="source-grid">{me.sources.map(source =>
             <div key={source.id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.name} ↗</a>
-              <span className="source-mode">{source.mode === 'live-flights' ? 'Live flight quotes connected' : source.mode === 'public-offers' ? 'Advertised offers connected' : source.mode === 'reviews' ? 'Reviews — open directly' : 'Open directly — integration pending'}</span><small>{source.detail}</small></div>)}</div></details>
+              <span className="source-mode">{source.mode === 'live-flights-stays' ? 'Live flight + stay quotes connected' : source.mode === 'live-flights' ? 'Live flight quotes connected' : 'API credentials required'}</span><small>{source.detail}</small></div>)}</div></details>
         </div></div>
         <section className="section"><div className="section-heading"><div><p className="eyebrow">01 / THE WISH LIST</p><h2>Where could you go?</h2></div>
           <button className="primary" disabled={busy} onClick={() => { setShowForm(!showForm); setEditing(null); }}>{showForm ? 'Close form' : '+ New search'}</button></div>
@@ -141,10 +133,10 @@ function App() {
             <button className="text-button" disabled={busy} onClick={() => void action(refresh)}>Refresh</button>
           </div>
           <p className="filter-note">Prices are compared within one currency. Packages, flights, and stays include different things.</p>
-          {running && <p className="search-progress" role="status">Checking public sources. The first search can take up to five minutes; cached results are faster.</p>}
+          {running && <p className="search-progress" role="status">Checking connected travel APIs. Flexible-date flight and stay searches can take a few minutes.</p>}
           {(type === 'all' || type === 'flight') && <FlightResults offers={visible} connected={me.liveFlightPricing} onSelect={setSelectedOffer} />}
           {showStayResults && (type === 'all' || type === 'flight-stay') && <TripResults trips={visibleTrips} sort={sort} onSelect={setSelectedOffer} />}
-          {type !== 'flight' && type !== 'flight-stay' && showPromotions && <>
+          {type !== 'flight' && type !== 'flight-stay' && showNonFlightResults && <>
           <h3 className="results-heading">Quoted holidays and stays <span className="count">{individualOffers.length}</span></h3>
           {!individualOffers.length ? <div className="empty compact"><h3>No quoted holidays or stays yet.</h3><p>A matching quote needs specific dates, a link to the offer and a total for your party.</p></div> :
             <div className="offer-grid">{individualOffers.map(o => <article className="offer-card" key={`${o.searchId}:${o.provider}:${o.externalId}`}>
@@ -156,22 +148,6 @@ function App() {
               <button type="button" className="text-button" onClick={() => setSelectedOffer(o)}>View offer details</button>
             </article>)}</div>}</>}
         </section>
-        {showPromotions && <section className="section promotions-section" aria-label="Public promotions">
-          <div className="advertised-heading"><div><h3 className="results-heading">Promotions · starting prices <span className="count">{publicOffers.length}</span></h3>
-            <p className="filter-note">These are public advertisements. They may open a route search or hotel page; they are not individual bookable quotes. Open a promotion to see exactly what was found and which details are unconfirmed.</p></div>
-            <label>Price basis<select value={priceUnit} onChange={e => { setPriceUnit(e.target.value); setLeadLimit(24); }}><option value="all">All price bases</option><option value="person">Per person</option><option value="advertised-stay">Advertised stay</option><option value="room-night">Room/night (check basis)</option><option value="unspecified">Unspecified basis</option></select></label></div>
-          {!publicOffers.length ? <div className="empty compact"><h3>No advertised offers for these filters yet.</h3><p>Choose Search now on an active search. Check the source status on your search card if a provider is unavailable.</p></div> :
-            <div className="offer-grid">{publicOffers.slice(0, leadLimit).map(o => <article className="offer-card advertised-card" key={`${o.searchId}:${o.provider}:${o.externalId}`}>
-              <div className="card-top"><span className="tag">{o.type} · advertised</span><span>{me.sources.find(s => s.id === o.provider)?.name ?? o.provider}</span></div>
-              <p className="eyebrow">{o.destination}</p><h3>{o.title}</h3><strong className="price"><span className="from-label">From </span>{money({ totalMinor: o.fromMinor, currency: o.currency })}</strong>
-              <p className="price-basis">{o.priceUnit === 'person' ? 'Per person · family total unconfirmed' : o.priceUnit === 'room-night' ? 'Room/night assumed · check basis and capacity' : o.priceUnit === 'advertised-stay' ? 'Advertised stay · family total unconfirmed' : 'Price basis unspecified · family total unconfirmed'}</p>
-              <PromotionDates offer={o} />
-              <p className="preference">{o.conditions}</p><small>Checked {new Date(o.checkedAt).toLocaleString()} · {o.searchName}</small>
-              <a className="primary provider-link" href={o.url} target="_blank" rel="noopener noreferrer">{o.departureDates.length || o.dateWindow ? 'Check advertised dates' : 'Open promotion'} ↗</a>
-              <button type="button" className="text-button" onClick={() => setSelectedOffer(o)}>View promotion details</button>
-            </article>)}</div>}
-          {publicOffers.length > leadLimit && <button className="text-button" onClick={() => setLeadLimit(leadLimit + 24)}>Show more advertised offers</button>}
-        </section>}
       </>}
       <footer><span>good holiday deals</span><p>For the places you haven’t been yet.</p><span>Plan together. Book directly.</span></footer>
     </main>

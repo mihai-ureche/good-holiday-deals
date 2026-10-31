@@ -1,16 +1,4 @@
 export const sourceCatalog = [
-  { id: 'vola', name: 'Vola.ro', url: 'https://www.vola.ro/', mode: 'manual', detail: 'Live round-trip prices for the selected party are not connected. Homepage starting fares are excluded.' },
-  { id: 'booking', name: 'Booking.com', url: 'https://www.booking.com/', mode: 'manual', detail: 'Live accommodation quotes need a supported provider integration.' },
-  { id: 'travelminit', name: 'Travelminit.ro', url: 'https://travelminit.ro/', mode: 'public-offers', detail: 'Public stay promotions; advertised dates and occupancy may differ.' },
-  { id: 'esky', name: 'eSky.ro', url: 'https://www.esky.ro/', mode: 'manual', detail: 'Automated search paths are excluded by the site’s crawling rules.' },
-  { id: 'christiantour', name: 'ChristianTour.ro', url: 'https://christiantour.ro/', mode: 'public-offers', detail: 'Public holiday promotions. Exact travel dates and family total need confirmation.' },
-  { id: 'directbooking', name: 'DirectBooking.ro', url: 'https://www.directbooking.ro/', mode: 'public-offers', detail: 'Public hotel starting prices; price basis and availability need confirmation.' },
-  { id: 'amfostacolo', name: 'AmFostAcolo.ro', url: 'https://amfostacolo.ro/', mode: 'reviews', detail: 'Use for traveller reviews; not integrated as a live price source.' },
   { id: 'ignav', name: 'Ignav', url: 'https://ignav.com/', mode: 'manual', detail: 'Live family-priced round trips and exact-itinerary booking links activate with a free API key.' },
-  { id: 'skyscanner', name: 'Skyscanner.ro', url: 'https://www.skyscanner.ro/', crawlUrl: 'https://www.skyscanner.ro/zboruri-de-la/buch/zboruri-ieftine-de-la-bucuresti.html', mode: 'manual', detail: 'Landing-page fares are excluded because they are not live quotes for the selected party.' },
-  { id: 'momondo', name: 'Momondo.ro', url: 'https://www.momondo.ro/', crawlUrl: 'https://www.momondo.ro/zboruri-din-bucuresti', mode: 'manual', detail: 'Live round-trip quotes for the selected party are not connected. Route starting fares are excluded.' },
-  { id: 'kiwi', name: 'Kiwi.com', url: 'https://www.kiwi.com/', crawlUrl: 'https://www.kiwi.com/en/city/flights-from-bucharest-romania/', mode: 'manual', detail: 'Live round-trip quotes for the selected party are not connected. Public city-deal fares are excluded.' },
-  { id: 'kayak', name: 'KAYAK', url: 'https://www.ro.kayak.com/', mode: 'public-offers', detail: 'Public hotel promotions. Flight teasers and public dated route fares are excluded; live party-priced round trips are not connected.' },
-  { id: 'cheapflights', name: 'Cheapflights', url: 'https://www.cheapflights.com/', crawlUrl: 'https://www.cheapflights.com/flights-from-bucharest/', mode: 'manual', detail: 'Live round-trip quotes for the selected party are not connected. Public route fares are excluded.' },
-  { id: 'eximtur', name: 'Eximtur.ro', url: 'https://www.eximtur.ro/', mode: 'manual', detail: 'The inspected homepage did not expose usable live quotes.' },
+  { id: 'duffel', name: 'Duffel', url: 'https://duffel.com/', mode: 'manual', detail: 'Live flight offers and final accommodation quotes activate with a Duffel access token and Stays access.' },
 ] as const;

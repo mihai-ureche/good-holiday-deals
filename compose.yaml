@@ -23,6 +23,9 @@ x-app: &app
     DATABASE_URL: postgres://holiday:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/holiday
     DIGEST_TIMEZONE: ${DIGEST_TIMEZONE:-Europe/Bucharest}
     EMAIL_MODE: ${EMAIL_MODE:-disabled}
+    IGNAV_API_KEY: ${IGNAV_API_KEY:-}
+    DUFFEL_ACCESS_TOKEN: ${DUFFEL_ACCESS_TOKEN:-}
+    DUFFEL_LINKS_APP_URL: ${DUFFEL_LINKS_APP_URL:-}
 
 services:
   api:
