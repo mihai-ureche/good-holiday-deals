@@ -66,7 +66,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     const invalid = await app.inject({ method: 'POST', url: '/api/auth/register', headers: origin,
       payload: { email: 'uninvited@example.com', password: 'a-valid-long-password', invitation: token() } });
     assert.equal(invalid.statusCode, 400);
-    const payload = { name: 'Family escape', departure: 'Bucharest', earliestDeparture: '2027-02-01', latestReturn: '2027-02-28',
+    const payload = { name: 'Family escape', departure: 'Bucharest', targetCountry: 'IT', targetCities: ['Rome'], earliestDeparture: '2027-02-01', latestReturn: '2027-02-28',
       minNights: 5, maxNights: 8, adults: 2, childrenAges: [4, 8], rooms: 1, tripTypes: ['package', 'flight', 'stay'], swimming: 'sea' };
     const saved = await app.inject({ method: 'POST', url: '/api/searches', headers: { ...origin, cookie: first.cookie }, payload });
     assert.equal(saved.statusCode, 201, saved.body);
@@ -78,11 +78,11 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     assert.equal((await app.inject({ url: '/api/me', headers: { cookie: first.cookie } })).json().timezone, 'Europe/Bucharest');
 
     providers.push({ id: 'mock-provider', liveRoundTripFlights: true, search: async criteria => [{ provider: 'mock-provider', externalId: 'family-1',
-      title: 'A family deal', destination: 'A sunny place', type: 'package', departureDate: '2027-02-10', returnDate: '2027-02-17',
+      title: 'A family deal', destination: 'Rome', destinationCountry: 'IT', type: 'package', departureDate: '2027-02-10', returnDate: '2027-02-17',
       totalMinor: 120000, currency: 'EUR', priceBasis: 'family-total', booking: { reference: 'package-1', description: 'Specific family package quote.', linkKind: 'specific-offer' }, adults: criteria.adults, childrenAges: criteria.childrenAges,
       url: 'https://example.com/deal', inclusions: ['Flights', 'Hotel'], swimming: 'unknown', swimmingEvidence: 'Not verified',
       checkedAt: new Date().toISOString() }, ...(['flight', 'stay'] as const).map(type => ({
-        provider: 'mock-provider', externalId: `quoted-${type}`, title: `Family ${type}`, destination: 'Rome', type,
+        provider: 'mock-provider', externalId: `quoted-${type}`, title: `Family ${type}`, destination: 'Rome', destinationCountry: 'IT', type,
         ...(type === 'flight' ? { journey: 'round-trip' as const } : {}),
         departureDate: '2027-02-10', returnDate: '2027-02-17', totalMinor: type === 'flight' ? 40000 : 25000,
         currency: 'EUR' as const, priceBasis: 'family-total' as const, adults: criteria.adults, childrenAges: criteria.childrenAges,
@@ -90,7 +90,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
         url: `https://example.com/${type === 'flight' ? 'flight' : 'stay'}`, inclusions: [], swimming: 'unknown' as const,
         swimmingEvidence: '', checkedAt: new Date().toISOString(),
       }))], discover: async () => [{ provider: 'mock-provider', externalId: 'ad-1',
-      title: 'Advertised holiday', destination: 'Test coast', type: 'package', fromMinor: 10000, currency: 'EUR', priceUnit: 'person',
+      title: 'Advertised holiday', destination: 'Rome', destinationCountry: 'IT', type: 'package', fromMinor: 10000, currency: 'EUR', priceUnit: 'person',
       url: 'https://example.com/advert', departureCities: [], departureDates: [], nights: null,
       conditions: 'Dates and family total are not confirmed.', checkedAt: new Date().toISOString() },
       { provider: 'mock-provider', externalId: 'flight-ad', title: 'Test flight', destination: 'Rome', type: 'flight', fromMinor: 10000,
@@ -157,14 +157,14 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     const record = await db.query('SELECT status FROM digests WHERE user_id=$1 AND local_day=$2', [first.id, '2027-01-03']);
     assert.equal(record.rows[0].status, 'uncertain');
 
-    // Optional destinations survive the API/storage round trip and apply to manual collection.
+    // Required country and multi-city destinations survive storage and apply to manual collection.
     const targeted = await app.inject({ method: 'POST', url: '/api/searches', headers: { ...origin, cookie: first.cookie },
-      payload: { ...payload, name: 'Italy only', targetCountry: 'IT', targetCity: 'Rome' } });
+      payload: { ...payload, name: 'Italy only', targetCountry: 'IT', targetCities: ['Rome'] } });
     assert.equal(targeted.statusCode, 201, targeted.body);
     const targetId = targeted.json().id;
     const savedTarget = (await app.inject({ url: '/api/searches', headers: { cookie: first.cookie } })).json()
       .find((s: { id: string }) => s.id === targetId);
-    assert.equal(savedTarget.targetCountry, 'IT'); assert.equal(savedTarget.targetCity, 'Rome');
+    assert.equal(savedTarget.targetCountry, 'IT'); assert.deepEqual(savedTarget.targetCities, ['Rome']);
     const targetRun = await app.inject({ method: 'POST', url: `/api/searches/${targetId}/run`, headers: { ...origin, cookie: first.cookie }, payload: {} });
     assert.equal(targetRun.statusCode, 200, targetRun.body);
     assert.equal(targetRun.json().offers, 2); assert.equal(targetRun.json().discoveries, 1); assert.equal(targetRun.json().combinations, 1);
@@ -172,7 +172,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     assert.equal((await app.inject({ method: 'PATCH', url: `/api/searches/${targetId}`, headers: { ...origin, cookie: second.cookie },
       payload: { targetCountry: 'GR' } })).statusCode, 404);
     assert.equal((await app.inject({ method: 'PATCH', url: `/api/searches/${targetId}`, headers,
-      payload: { targetCity: '', targetCountry: 'MT' } })).statusCode, 200);
+      payload: { targetCities: [], targetCountry: 'MT' } })).statusCode, 200);
     const afterChange = (await app.inject({ url: '/api/discoveries', headers })).json();
     assert.equal(afterChange.filter((d: { searchId: string }) => d.searchId === targetId).length, 0, 'old destination results must be cleared');
     const emptyRun = await app.inject({ method: 'POST', url: `/api/searches/${targetId}/run`, headers, payload: {} });
@@ -181,15 +181,9 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     assert.equal((await app.inject({ method: 'PATCH', url: `/api/searches/${targetId}`, headers,
       payload: { targetCountry: 'invalid country' } })).statusCode, 400);
     assert.equal((await app.inject({ method: 'PATCH', url: `/api/searches/${targetId}`, headers,
-      payload: { targetCountry: '' } })).statusCode, 200);
-    const cleared = await db.query('SELECT criteria,last_checked_at,last_status FROM searches WHERE id=$1', [targetId]);
-    assert.equal(cleared.rows[0].criteria.targetCountry, '', 'All countries must clear Malta in the database');
-    assert.equal(cleared.rows[0].criteria.targetCity, '');
-    assert.equal(cleared.rows[0].last_checked_at, null);
-    assert.equal(cleared.rows[0].last_status, null);
-    const savedAll = (await app.inject({ url: '/api/searches', headers })).json()
-      .find((s: { id: string }) => s.id === targetId);
-    assert.equal(savedAll.targetCountry, '', 'reloading the search must retain All countries');
+      payload: { targetCountry: '' } })).statusCode, 400);
+    assert.equal((await app.inject({ method: 'PATCH', url: `/api/searches/${targetId}`, headers,
+      payload: { targetCountry: 'IT', targetCities: ['Rome'] } })).statusCode, 200);
     const allRun = await app.inject({ method: 'POST', url: `/api/searches/${targetId}/run`, headers, payload: {} });
     assert.equal(allRun.statusCode, 200, allRun.body);
     assert.equal(allRun.json().offers, 3); assert.equal(allRun.json().discoveries, 2);
@@ -226,7 +220,7 @@ test('invite-only accounts, ownership, daily Graph digests and ambiguous sends',
     assert.deepEqual((await db.query('SELECT criteria FROM searches WHERE id=$1', [targetId])).rows[0].criteria, renamed.criteria,
       'invalid edits must leave the saved search unchanged');
 
-    const fullEdit = { name: 'All settings edited', departure: 'Cluj', targetCity: 'Brasov', targetCountry: 'RO',
+    const fullEdit = { name: 'All settings edited', departure: 'Cluj', targetCities: ['Brasov'], targetCountry: 'RO',
       nearbyAirports: false, earliestDeparture: '2027-03-01', latestReturn: '2027-03-31', minNights: 3, maxNights: 5,
       adults: 3, childrenAges: [6], rooms: 2, currency: 'RON', tripTypes: ['stay'], swimming: 'heated-pool',
       preferences: 'A quiet hotel with a heated pool.', active: false };

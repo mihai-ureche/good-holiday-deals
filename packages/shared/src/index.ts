@@ -1,12 +1,18 @@
 import { z } from 'zod';
-import { countryCode, matchesDestination } from './destinations.js';
+import { countryCode, destinationKey, matchesDestination } from './destinations.js';
 
 const day = z.iso.date();
-export const searchSchema = z.object({
+export const searchObjectSchema = z.object({
   name: z.string().trim().min(1).max(100),
   departure: z.string().trim().min(2).max(120),
-  targetCity: z.string().trim().max(120).default(''),
-  targetCountry: z.string().trim().max(120).refine(v => !v || !!countryCode(v), 'Choose a valid destination country').default(''),
+  targetCities: z.array(z.string().trim().min(1).max(120)).max(5, 'Choose no more than five destination cities')
+    .refine(values => new Set(values.map(destinationKey)).size === values.length,
+      'Choose each destination city only once').default([]),
+  targetAirports: z.array(z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'Choose a valid three-letter airport code'))
+    .max(5, 'Choose no more than five destination airports')
+    .refine(values => new Set(values).size === values.length, 'Choose each destination airport only once').default([]),
+  targetCountry: z.string().trim().min(2, 'Choose a destination country').max(120)
+    .refine(v => !!countryCode(v), 'Choose a valid destination country'),
   nearbyAirports: z.boolean().default(true),
   earliestDeparture: day,
   latestReturn: day,
@@ -14,16 +20,35 @@ export const searchSchema = z.object({
   maxNights: z.number().int().min(1).max(60),
   adults: z.number().int().min(1).max(8),
   childrenAges: z.array(z.number().int().min(0).max(17)).max(6),
+  lapInfants: z.number().int().min(0).max(6).default(0),
   rooms: z.number().int().min(1).max(6).optional(),
   currency: z.enum(['EUR', 'RON', 'USD', 'GBP']).default('EUR'),
   tripTypes: z.array(z.enum(['package', 'flight', 'stay'])).min(1).max(3),
   swimming: z.enum(['any', 'sea', 'heated-pool', 'either']).default('any'),
   preferences: z.string().trim().max(1000).default(''),
   active: z.boolean().default(true),
-}).refine(s => s.maxNights >= s.minNights, { message: 'Maximum nights must be at least minimum nights' })
+});
+const validatedSearchSchema = searchObjectSchema
+  .refine(s => s.lapInfants <= s.childrenAges.filter(age => age < 2).length,
+    { path: ['lapInfants'], message: 'Lap infants cannot exceed the number of children under two' })
+  .refine(s => s.lapInfants <= s.adults,
+    { path: ['lapInfants'], message: 'Each lap infant must travel with an adult' })
+  .refine(s => !s.tripTypes.includes('flight') || s.adults + s.childrenAges.length <= 9,
+    { path: ['childrenAges'], message: 'Flight searches support up to nine travelers' })
+  .refine(s => s.maxNights >= s.minNights, { message: 'Maximum nights must be at least minimum nights' })
   .refine(s => s.latestReturn > s.earliestDeparture, { message: 'Return window must end after departure' })
   .refine(s => (Date.parse(s.latestReturn) - Date.parse(s.earliestDeparture)) / 86400000 >= s.minNights,
     { message: 'The travel window must fit the minimum stay' });
+
+// Read old single-city records as a one-item city selection. New requests and
+// persisted values use targetCities only.
+export const searchSchema = z.preprocess(value => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const input = value as Record<string, unknown>;
+  if (input.targetCities !== undefined || typeof input.targetCity !== 'string') return value;
+  const legacy = input.targetCity.trim();
+  return { ...input, targetCities: legacy ? [legacy] : [] };
+}, validatedSearchSchema);
 
 export type SearchCriteria = z.infer<typeof searchSchema>;
 export type SavedSearch = SearchCriteria & { id: string; createdAt: string };
@@ -33,6 +58,7 @@ export const offerSchema = z.object({
   externalId: z.string().min(1).max(200),
   title: z.string().min(1).max(300),
   destination: z.string().min(1).max(200),
+  destinationAirport: z.string().regex(/^[A-Z]{3}$/).optional(),
   destinationCountry: z.string().trim().min(2).max(120).optional(),
   type: z.enum(['package', 'flight', 'stay']),
   journey: z.enum(['round-trip', 'one-way', 'unknown']).optional(),
@@ -48,6 +74,9 @@ export const offerSchema = z.object({
     description: z.string().trim().min(1).max(1000),
     linkKind: z.literal('specific-offer'),
     live: z.boolean().optional(),
+    purchaseLinks: z.array(z.object({ label: z.string().trim().min(1).max(100),
+      url: z.url().refine(v => new URL(v).protocol === 'https:', 'Booking links must use HTTPS'),
+      totalMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() })).min(1).max(4).optional(),
     rooms: z.number().int().min(1).max(6).optional(),
     expiresAt: z.iso.datetime().optional(),
   }).optional(),

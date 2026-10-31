@@ -9,8 +9,9 @@ import { z, ZodError } from 'zod';
 import { db } from './db.js';
 import { config } from './config.js';
 import { hashPassword, hashToken, token, verifyPassword } from './auth.js';
-import { searchSchema } from '../../../packages/shared/src/index.js';
-import { providers, sourceCatalog } from '../../../packages/providers/src/index.js';
+import { searchObjectSchema, searchSchema } from '../../../packages/shared/src/index.js';
+import { destinationCities, ignavDestinationAirports, providers, sourceCatalog } from '../../../packages/providers/src/index.js';
+import { countryCode } from '../../../packages/shared/src/destinations.js';
 import { runSearch } from './search-runner.js';
 import { combineTrips } from '../../../packages/shared/src/combinations.js';
 import { offerSchema, specificOffers } from '../../../packages/shared/src/index.js';
@@ -105,9 +106,23 @@ export async function createApp() {
   });
   app.get('/api/me', async request => {
     const result = await db.query('SELECT email,digest_enabled AS "digestEnabled" FROM users WHERE id=$1', [request.userId]);
+    const liveFlightPricing = providers.some(provider => provider.liveRoundTripFlights && provider.search);
     return { ...result.rows[0], timezone: config.DIGEST_TIMEZONE, emailConfigured: config.EMAIL_MODE === 'graph',
-      providers: providers.map(p => p.id), sources: sourceCatalog,
-      liveFlightPricing: providers.some(provider => provider.liveRoundTripFlights && provider.search) };
+      providers: providers.map(p => p.id), sources: sourceCatalog.map(source => source.id === 'ignav' && liveFlightPricing
+        ? { ...source, mode: 'live-flights', detail: 'Live party-priced round-trip search is connected.' } : source), liveFlightPricing };
+  });
+  app.get<{ Querystring: { country?: string } }>('/api/destinations/cities', async request => {
+    const country = z.string().trim().length(2).transform(value => value.toUpperCase())
+      .refine(value => countryCode(value) === value, 'Choose a valid destination country')
+      .parse(request.query.country);
+    return { cities: await destinationCities(country) };
+  });
+  app.get<{ Querystring: { country?: string } }>('/api/destinations/airports', async (request, reply) => {
+    const country = z.string().trim().length(2).transform(value => value.toUpperCase())
+      .refine(value => countryCode(value) === value, 'Choose a valid destination country')
+      .parse(request.query.country);
+    if (!process.env.IGNAV_API_KEY) return reply.code(503).send({ error: 'Add an Ignav API key to load destination airports' });
+    return { airports: await ignavDestinationAirports(country, process.env.IGNAV_API_KEY) };
   });
   app.patch('/api/me', async request => {
     const body = z.object({ digestEnabled: z.boolean() }).parse(request.body);
@@ -117,8 +132,11 @@ export async function createApp() {
   app.get('/api/searches', async request => {
     const result = await db.query(`SELECT id,criteria,created_at AS "createdAt",last_checked_at AS "lastCheckedAt",
       last_status AS "lastStatus" FROM searches WHERE user_id=$1 ORDER BY created_at DESC`, [request.userId]);
-    return result.rows.map(row => ({ ...row.criteria, id: row.id, createdAt: row.createdAt,
-      lastCheckedAt: row.lastCheckedAt, lastStatus: row.lastStatus }));
+    return result.rows.map(row => {
+      const parsed = searchSchema.safeParse(row.criteria);
+      return { ...(parsed.success ? parsed.data : row.criteria), id: row.id, createdAt: row.createdAt,
+        lastCheckedAt: row.lastCheckedAt, lastStatus: row.lastStatus };
+    });
   });
   app.post('/api/searches', async (request, reply) => {
     const criteria = searchSchema.parse(request.body);
@@ -130,18 +148,19 @@ export async function createApp() {
   });
   app.patch<{ Params: { id: string } }>('/api/searches/:id', async (request, reply) => {
     const id = z.uuid().parse(request.params.id);
-    const body = z.partialRecord(searchSchema.keyof(), z.unknown())
+    const body = z.partialRecord(searchObjectSchema.keyof(), z.unknown())
       .refine(v => Object.keys(v).length > 0, 'Provide a search setting to update').parse(request.body);
     const client = await db.connect();
     try {
       await client.query('BEGIN');
       const result = await client.query('SELECT criteria FROM searches WHERE id=$1 AND user_id=$2 FOR UPDATE', [id, request.userId]);
       if (!result.rowCount) { await client.query('ROLLBACK'); return reply.code(404).send({ error: 'Search not found' }); }
-      const previous = searchSchema.parse(result.rows[0].criteria);
-      const criteria = searchSchema.parse({ ...previous, ...body });
+      const previousResult = searchSchema.safeParse(result.rows[0].criteria);
+      const criteria = searchSchema.parse({ ...result.rows[0].criteria, ...body });
+      const previous = previousResult.success ? previousResult.data : criteria;
       const { name: previousName, active: previousActive, ...previousFilters } = previous;
       const { name, active, ...filters } = criteria;
-      const changed = JSON.stringify(filters) !== JSON.stringify(previousFilters);
+      const changed = !previousResult.success || JSON.stringify(filters) !== JSON.stringify(previousFilters);
       await client.query(`UPDATE searches SET criteria=$1,
         last_checked_at=CASE WHEN $2 THEN NULL ELSE last_checked_at END,
         last_status=CASE WHEN $2 THEN NULL ELSE last_status END WHERE id=$3`, [criteria, changed, id]);

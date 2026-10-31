@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { combineTrips } from '../packages/shared/src/combinations.js';
 import { specificOffers, searchSchema, type Offer, type Discovery } from '../packages/shared/src/index.js';
 
-const criteria = searchSchema.parse({ name: 'Family holiday', departure: 'Bucharest', earliestDeparture: '2027-02-01', latestReturn: '2027-02-28',
+const criteria = searchSchema.parse({ name: 'Family holiday', departure: 'Bucharest', targetCountry: 'IT', targetCities: ['Rome'], earliestDeparture: '2027-02-01', latestReturn: '2027-02-28',
   minNights: 5, maxNights: 8, adults: 2, childrenAges: [4, 8], rooms: 2, tripTypes: ['flight', 'stay'], currency: 'EUR' });
 const now = new Date().toISOString();
 const flight: Discovery = { provider: 'flight', externalId: 'f1', title: 'Flight', destination: 'Rome', type: 'flight', fromMinor: 10000,

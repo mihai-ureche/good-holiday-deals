@@ -4,9 +4,9 @@ import { localSchedule, searchSchema, matchingOffers, type Offer } from '../pack
 import { collect } from '../packages/providers/src/index.js';
 import { hashPassword, verifyPassword } from '../apps/api/src/auth.js';
 
-const search = searchSchema.parse({ name: 'February sun', departure: 'Bucharest', earliestDeparture: '2027-02-01',
+const search = searchSchema.parse({ name: 'February sun', departure: 'Bucharest', targetCountry: 'GR', targetCities: ['Athens'], earliestDeparture: '2027-02-01',
   latestReturn: '2027-02-28', minNights: 5, maxNights: 8, adults: 2, childrenAges: [4, 8], tripTypes: ['package', 'flight', 'stay'] });
-const offer: Offer = { provider: 'test', externalId: '1', title: 'Family stay', destination: 'A destination', type: 'package',
+const offer: Offer = { provider: 'test', externalId: '1', title: 'Family stay', destination: 'Athens', destinationCountry: 'GR', type: 'package',
   departureDate: '2027-02-10', returnDate: '2027-02-17', totalMinor: 120000, currency: 'EUR', priceBasis: 'family-total', booking: { reference: 'test-quote', description: 'Specific package for the selected party and dates.', linkKind: 'specific-offer' },
   adults: 2, childrenAges: [8, 4], url: 'https://example.com/offer', inclusions: ['Flights', 'Hotel'],
   swimming: 'unknown', swimmingEvidence: 'Not verified', checkedAt: '2026-10-29T08:00:00.000Z' };
@@ -24,6 +24,9 @@ test('travel windows must fit the stay and child ages must be valid', () => {
   assert.equal(searchSchema.safeParse({ ...search, maxNights: 4 }).success, false);
   assert.equal(searchSchema.safeParse({ ...search, latestReturn: '2027-02-03' }).success, false);
   assert.equal(searchSchema.safeParse({ ...search, childrenAges: [18] }).success, false);
+  assert.equal(searchSchema.safeParse({ ...search, childrenAges: [1], lapInfants: 2 }).success, false);
+  assert.equal(searchSchema.safeParse({ ...search, adults: 1, childrenAges: [0, 1], lapInfants: 2 }).success, false);
+  assert.equal(searchSchema.safeParse({ ...search, adults: 8, childrenAges: [8, 10], tripTypes: ['flight'] }).success, false);
   assert.equal(searchSchema.safeParse({ ...search, tripTypes: [] }).success, false);
 });
 test('family composition, date window, type and currency are enforced before sorting', () => {

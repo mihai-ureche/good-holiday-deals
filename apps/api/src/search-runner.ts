@@ -14,7 +14,9 @@ export async function runSearch(id: string, options: { userId?: string; manual?:
     const found = await client.query(`SELECT criteria,last_checked_at FROM searches
       WHERE id=$1 AND ($2::uuid IS NULL OR user_id=$2)`, [id, options.userId ?? null]);
     if (!found.rowCount) throw new SearchRunError('Search not found', 404);
-    const criteria = searchSchema.parse(found.rows[0].criteria);
+    const parsedCriteria = searchSchema.safeParse(found.rows[0].criteria);
+    if (!parsedCriteria.success) throw new SearchRunError('Choose a destination country and up to five airports before running this search.', 409);
+    const criteria = parsedCriteria.data;
     if (!criteria.active) throw new SearchRunError('Resume this search before running it', 409);
     if (criteria.latestReturn < new Date().toISOString().slice(0, 10)) throw new SearchRunError('This travel window has ended. Create a new search with future dates.', 400);
     if (options.manual && found.rows[0].last_checked_at && Date.now() - new Date(found.rows[0].last_checked_at).getTime() < 60_000) {
@@ -28,7 +30,7 @@ export async function runSearch(id: string, options: { userId?: string; manual?:
       && !(options.adapters ?? providers).some(provider => provider.liveRoundTripFlights && provider.search);
     const status = (result.configured === 0 ? 'No quote providers configured for this search.'
       : `${result.offers.length} specific quotes; ${result.discoveries.length} promotions; ${combinations.length} flight + stay options.${result.failures.length ? ` Unavailable sources: ${result.failures.join(', ')}.` : ''}`)
-      + (missingFlightSource ? ' Live round-trip flight pricing is not connected.' : '');
+      + (missingFlightSource ? ' Live round-trip flight pricing is not connected. Add a free Ignav API key to the backend.' : '');
     await client.query('BEGIN');
     try {
       const exists = await client.query('SELECT id,criteria FROM searches WHERE id=$1 FOR UPDATE', [id]);

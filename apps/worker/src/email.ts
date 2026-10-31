@@ -1,23 +1,28 @@
 import { z } from 'zod';
 import { config } from '../../api/src/config.js';
 import { money, isSpecificOffer, type Offer, type Discovery } from '../../../packages/shared/src/index.js';
+import { topFlightOffersPerAirport } from '../../../packages/shared/src/flights.js';
 import type { CombinedTrip } from '../../../packages/shared/src/combinations.js';
 
 export function digestText(sections: { name: string; offers: Offer[]; discoveries?: Discovery[]; combinations?: CombinedTrip[]; status: string }[], appUrl: string) {
-  return ['Your morning travel shortlist', '', ...sections.flatMap(s => [s.name, s.status,
+  return ['Your morning travel shortlist', '', ...sections.flatMap(s => {
+    const exact = [...topFlightOffersPerAirport(s.offers), ...s.offers.filter(offer => offer.type !== 'flight' && isSpecificOffer(offer)).slice(0, 10)];
+    return [s.name, s.status,
     ...(s.combinations?.length ? ['Flight + accommodation, booked separately:', ...s.combinations.slice(0, 8).map(t =>
       `${t.destination} — SUM OF QUOTED TOTALS\n`
       + `Total ${money({ totalMinor: t.totalMinor, currency: t.currency })}; `
       + `average per traveler ${money({ totalMinor: t.perPersonMinor, currency: t.currency })}\n`
       + `${t.nights} nights, ${t.travelers} travelers, ${t.rooms} room(s)\nFlight: ${t.flight.title} — ${t.flight.url}\nStay: ${t.stay.title} — ${t.stay.url}\n`
       + `${t.bookingNotes.join('\n')}\nChecked: ${t.checkedAt}\n`)] : []),
-    ...s.offers.filter(isSpecificOffer).slice(0, 15).map(o => `${o.title} — ${money(o)} (${o.priceBasis === 'family-total' ? 'family total' : 'indicative price'})\n`
+    ...exact.map(o => `${o.title} — ${money(o)} (${o.priceBasis === 'family-total' ? 'family total' : 'indicative price'})\n`
       + `Quote ${o.booking!.reference}: ${o.booking!.description}\n`
       + `${o.destination} · ${o.departureDate} to ${o.returnDate} · ${o.type}\n${o.url}\n`
+      + `${o.booking!.purchaseLinks?.map(link => `${link.label}: ${link.url}`).join('\n') ?? ''}${o.booking!.purchaseLinks ? '\n' : ''}`
       + `Included: ${o.inclusions.join(', ') || 'Check with provider'}\nSwimming: ${o.swimmingEvidence || 'Not verified'}\nChecked: ${o.checkedAt}\n`),
     ...(s.discoveries?.some(d => d.type !== 'flight') ? ['Promotions — not confirmed family quotes:', ...s.discoveries.filter(d => d.type !== 'flight').slice(0, 10).map(d =>
       `${d.title} — from ${money({ totalMinor: d.fromMinor, currency: d.currency })} (${d.priceUnit === 'person' ? 'per person' : d.priceUnit === 'room-night' ? 'per room/night; verify basis' : d.priceUnit === 'advertised-stay' ? 'advertised stay' : 'price basis unspecified'})\n`
-      + `${d.conditions}\nLink opens ${d.linkKind === 'search' ? 'an advertised search' : d.linkKind === 'property' ? 'a hotel page' : 'a promotion/destination page'}; no individual quote.\n${d.url}\nChecked: ${d.checkedAt}\n`)] : []), '']),
+      + `${d.conditions}\nLink opens ${d.linkKind === 'search' ? 'an advertised search' : d.linkKind === 'property' ? 'a hotel page' : 'a promotion/destination page'}; no individual quote.\n${d.url}\nChecked: ${d.checkedAt}\n`)] : []), ''];
+  }),
   `Prices and availability may change. Confirm all details directly with the provider.`,
   `View deals or pause daily emails: ${appUrl}`].join('\n');
 }

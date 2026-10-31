@@ -2,17 +2,21 @@ import { specificOffers, offerSchema, discoverySchema, matchingDiscoveries, norm
 import { sourceCatalog } from './catalog.js';
 import { publicPage } from './http.js';
 import { parsePublicOffers } from './public-offers.js';
+import { createIgnavLiveProvider } from './ignav-live.js';
 export { sourceCatalog } from './catalog.js';
+export { destinationCities, majorDestinationCities } from './destination-cities.js';
+export { createIgnavLiveProvider, ignavDestinationAirports } from './ignav-live.js';
 
 export interface TravelProvider {
   id: string;
   liveRoundTripFlights?: boolean;
+  timeoutMs?: number;
   // Adapters must respect AbortSignal, use a fixed allowlisted origin, and return party-specific quotes.
   search?(criteria: SearchCriteria, signal: AbortSignal): Promise<Offer[]>;
   discover?(criteria: SearchCriteria, signal: AbortSignal): Promise<Discovery[]>;
 }
 
-export const providers: TravelProvider[] = sourceCatalog.filter(s => s.mode === 'public-offers').map(source => ({
+const publicProviders: TravelProvider[] = sourceCatalog.filter(s => s.mode === 'public-offers').map(source => ({
   id: source.id,
   discover: async (criteria, signal) => {
     if (['momondo', 'kiwi', 'cheapflights', 'skyscanner'].includes(source.id) && normalizedCity(criteria.departure) !== 'bucuresti') return [];
@@ -24,6 +28,9 @@ export const providers: TravelProvider[] = sourceCatalog.filter(s => s.mode === 
   },
 }));
 
+export const providers: TravelProvider[] = [...publicProviders,
+  ...(process.env.IGNAV_API_KEY ? [createIgnavLiveProvider({ apiKey: process.env.IGNAV_API_KEY })] : [])];
+
 export async function collect(criteria: SearchCriteria, adapters = providers) {
   const offers: Offer[] = [];
   const discoveries: Discovery[] = [];
@@ -31,7 +38,7 @@ export async function collect(criteria: SearchCriteria, adapters = providers) {
   const includePromotions = criteria.tripTypes.some(type => type !== 'flight');
   for (const provider of adapters) {
     try {
-      const signal = AbortSignal.timeout(30_000);
+      const signal = AbortSignal.timeout(provider.timeoutMs ?? 30_000);
       const result = provider.search ? await provider.search(criteria, signal) : [];
       offers.push(...result.slice(0, 100).map(v => offerSchema.parse({ ...v, provider: provider.id })));
       if (provider.discover && includePromotions) discoveries.push(...(await provider.discover(criteria, signal)).slice(0, 100)

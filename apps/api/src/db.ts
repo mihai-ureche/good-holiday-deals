@@ -45,6 +45,9 @@ export async function migrate() {
         provider text NOT NULL, external_id text NOT NULL, payload jsonb NOT NULL,
         PRIMARY KEY (search_id, provider, external_id)
       );
+      UPDATE searches SET criteria=jsonb_set(criteria, '{active}', 'false'::jsonb, true),
+        last_status='Choose a destination country and up to five airports before resuming this search.'
+      WHERE COALESCE(btrim(criteria->>'targetCountry'), '')='';
     `);
     await client.query('COMMIT');
   } catch (e) {

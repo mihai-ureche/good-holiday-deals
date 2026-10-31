@@ -40,9 +40,12 @@ export function OfferDetails({ offer, onDismiss }: { offer: (Offer | Discovery) 
       {promotion && <p className="offer-detail-note">This is a promotion, with no individual flight or room quote. The link opens {offer.linkKind === 'search'
         ? 'the advertised search, which may show several results' : offer.linkKind === 'property' ? 'the hotel page, where a room and rate still need to be selected' : 'the provider’s promotion or destination page'}.
         The advertised price may differ for your dates and travelers.</p>}
-      {(promotion || specific) && <a className="primary" href={offer.url} target="_blank" rel="noopener noreferrer">{linkLabel} ↗</a>}
+      {promotion && <a className="primary" href={offer.url} target="_blank" rel="noopener noreferrer">{linkLabel} ↗</a>}
+      {specific && (offer.booking?.purchaseLinks ?? [{ label: linkLabel, url: offer.url }]).map(link =>
+        <a className="primary" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{link.label} ↗</a>)}
       {!promotion && !specific && <p className="offer-detail-note">This quote is expired or has no specific offer link. Run your search again.</p>}
-      <p className="offer-link-address">{offer.url}</p>
+      <p className="offer-link-address">{!promotion && offer.booking?.purchaseLinks?.length
+        ? offer.booking.purchaseLinks.map(link => link.url).join('\n') : offer.url}</p>
       {promotion && offer.sourceUrl && <p className="filter-note">Found on <a href={offer.sourceUrl} target="_blank" rel="noopener noreferrer">{new URL(offer.sourceUrl).hostname}</a>.</p>}
     </div>
   </FullWindowDialog>;

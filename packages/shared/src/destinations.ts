@@ -40,6 +40,21 @@ const cityGroups: [string, string][] = [
   ['US', 'New York|New York City;Miami;Las Vegas;Los Angeles;San Francisco;Orlando'],
   ['MX', 'Cancun;Riviera Maya;Playa del Carmen'], ['DO', 'Punta Cana'], ['CU', 'Havana;Varadero'],
 ];
+const majorCities = new Map(cityGroups.map(([country, groups]) => [country,
+  groups.split(';').slice(0, 5).map(group => group.split('|')[0]!.trim())]));
+const countryCities = new Map(cityGroups.map(([country, groups]) => [country,
+  groups.split(';').map(group => group.split('|')[0]!.trim())]));
+export const flightDestinationCountries = [...majorCities.keys()].map(code => ({ code, name: english.of(code)! }))
+  .sort((a, b) => a.name.localeCompare(b.name, 'en'));
+export function defaultTargetCities(country: string): string[] {
+  return [...(majorCities.get(countryCode(country) ?? '') ?? [])];
+}
+export function targetCityOptions(country: string): string[] {
+  return [...(countryCities.get(countryCode(country) ?? '') ?? [])];
+}
+export function selectedTargetCities(target: { targetCountry?: string; targetCities?: string[] }): string[] {
+  return target.targetCities?.map(value => value.trim()).filter(Boolean) ?? [];
+}
 const cities = new Map<string, { key: string; country: string }>();
 for (const [country, groups] of cityGroups) for (const group of groups.split(';')) {
   const aliases = group.split('|').map(normalize);
@@ -48,11 +63,11 @@ for (const [country, groups] of cityGroups) for (const group of groups.split(';'
 export const destinationKey = (value: string) => cities.get(normalize(value))?.key ?? normalize(value);
 
 type Destination = { destination: string; destinationCountry?: string };
-type Target = { targetCity?: string; targetCountry?: string };
+type Target = { targetCities?: string[]; targetCountry?: string };
 export function matchesDestination(criteria: Target, offer: Destination): boolean {
-  const city = criteria.targetCity?.trim();
   const country = criteria.targetCountry?.trim();
-  if (!city && !country) return true;
+  const targetCities = selectedTargetCities(criteria);
+  if (!targetCities.length && !country) return true;
   // Separators distinguish a city from an explicit region/country. Whole-place
   // comparisons prevent e.g. Rome matching Romeoville or York matching New York.
   const parts = offer.destination.split(/[,;/\n()]+|\s+[-–—]\s+/).map(normalize).filter(Boolean);
@@ -63,6 +78,7 @@ export function matchesDestination(criteria: Target, offer: Destination): boolea
     : parts.flatMap(part => cities.get(part)?.country ?? []);
   if (country && (!countryCode(country) || !knownCountries.length
     || !knownCountries.every(code => code === countryCode(country)))) return false;
-  if (city && !parts.some(part => !countryCode(part) && destinationKey(part) === destinationKey(city))) return false;
+  if (targetCities.length && !targetCities.some(city => parts.some(part => !countryCode(part)
+    && destinationKey(part) === destinationKey(city)))) return false;
   return true;
 }

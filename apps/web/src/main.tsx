@@ -6,7 +6,8 @@ import './sources.css';
 import './trips.css';
 import './destinations.css';
 import { TripResults, type ListedTrip } from './TripResults.js';
-import { destinationCountries, countryCode, countryName } from '../../../packages/shared/src/destinations.js';
+import { countryCode, countryName, destinationCountries,
+  selectedTargetCities } from '../../../packages/shared/src/destinations.js';
 import { OfferDetails } from './OfferDetails.js';
 import { MessageModal } from './MessageModal.js';
 import { api } from './api.js';
@@ -95,7 +96,7 @@ function App() {
           <p>{me.liveFlightPricing ? 'Search for dated round trips with a quoted total for your party.' : 'Live round-trip flight pricing is not connected. Public promotions do not provide flight quotes for your party.'}</p>
           <details className="source-details"><summary>View your travel sources</summary><div className="source-grid">{me.sources.map(source =>
             <div key={source.id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.name} ↗</a>
-              <span className="source-mode">{source.mode === 'public-offers' ? 'Advertised offers connected' : source.mode === 'reviews' ? 'Reviews — open directly' : 'Open directly — integration pending'}</span><small>{source.detail}</small></div>)}</div></details>
+              <span className="source-mode">{source.mode === 'live-flights' ? 'Live flight quotes connected' : source.mode === 'public-offers' ? 'Advertised offers connected' : source.mode === 'reviews' ? 'Reviews — open directly' : 'Open directly — integration pending'}</span><small>{source.detail}</small></div>)}</div></details>
         </div></div>
         <section className="section"><div className="section-heading"><div><p className="eyebrow">01 / THE WISH LIST</p><h2>Where could you go?</h2></div>
           <button className="primary" disabled={busy} onClick={() => { setShowForm(!showForm); setEditing(null); }}>{showForm ? 'Close form' : '+ New search'}</button></div>
@@ -116,9 +117,11 @@ function App() {
               <div className="card-top"><span className="tag">{s.active ? 'Watching' : 'Paused'}</span><span>{s.currency}</span></div>
               <h3>{s.name}</h3><p className="from">From {s.departure}{s.nearbyAirports ? ' + nearby airports' : ''}</p>
               <dl><div><dt>Travel window</dt><dd>{s.earliestDeparture} → {s.latestReturn}</dd></div>
-                <div><dt>Destination</dt><dd>{[s.targetCity, s.targetCountry ? countryName(s.targetCountry) : ''].filter(Boolean).join(', ') || 'All countries'}</dd></div>
+                <div><dt>Destination</dt><dd>{s.targetCountry
+                  ? `${s.targetAirports.length ? s.targetAirports.join(', ') : selectedTargetCities(s).join(', ') || 'Five major airports'} · ${countryName(s.targetCountry)}` : 'Choose a destination country'}</dd></div>
                 <div><dt>Your stay</dt><dd>{s.minNights === s.maxNights ? s.minNights : `${s.minNights}–${s.maxNights}`} nights</dd></div>
-                <div><dt>Your people</dt><dd>{s.adults} adults{s.childrenAges.length > 0 ? ` · children aged ${s.childrenAges.join(', ')}` : ''} · {s.rooms ?? 1} room(s)</dd></div></dl>
+                <div><dt>Your people</dt><dd>{s.adults} adults{s.childrenAges.length > 0 ? ` · children aged ${s.childrenAges.join(', ')}` : ''}
+                  {s.lapInfants ? ` · ${s.lapInfants} infant${s.lapInfants === 1 ? '' : 's'} on lap` : ''} · {s.rooms ?? 1} room(s)</dd></div></dl>
               <p className="preference">{s.preferences || (s.swimming !== 'any' ? `Swimming preference: ${s.swimming.replace('-', ' ')}` : 'Open to possibilities.')}</p>
               <small>{s.lastCheckedAt ? `Checked ${new Date(s.lastCheckedAt).toLocaleString()}. ${s.lastStatus ?? ''}` : 'Ready for your first search.'}</small>
               <button className="text-button edit-search" disabled={busy} onClick={() => {
@@ -197,14 +200,50 @@ function Auth({ onSuccess }: { onSuccess: () => Promise<void> }) {
   </section>;
 }
 
-function DestinationFields({ city = '', country = '' }: { city?: string; country?: string }) {
-  return <>
-    <label>Target city (optional)<input name="targetCity" defaultValue={city} placeholder="e.g. Rome" maxLength={120} /></label>
-    <label>Target country (optional)<select name="targetCountry" defaultValue={countryCode(country) ?? ''}>
-      <option value="">All countries</option>{destinationCountries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+type DestinationAirport = { code: string; name: string; city: string; country: string };
+function DestinationFields({ airports = [], country = '' }: { airports?: string[]; country?: string }) {
+  const initialCountry = countryCode(country) ?? '';
+  const [selectedCountry, setSelectedCountry] = useState(initialCountry);
+  const [selectedAirports, setSelectedAirports] = useState<string[]>(airports);
+  const [options, setOptions] = useState<DestinationAirport[]>([]);
+  const [loadingAirports, setLoadingAirports] = useState(false);
+  const [airportError, setAirportError] = useState('');
+  useEffect(() => {
+    if (!selectedCountry) { setOptions([]); setSelectedAirports([]); return; }
+    let current = true;
+    setLoadingAirports(true); setAirportError('');
+    void api<{ airports: DestinationAirport[] }>(`/destinations/airports?country=${encodeURIComponent(selectedCountry)}`)
+      .then(result => {
+        if (!current) return;
+        setOptions(result.airports);
+        setSelectedAirports(previous => {
+          const available = previous.filter(code => result.airports.some(airport => airport.code === code));
+          return available.length ? available : result.airports.slice(0, 5).map(airport => airport.code);
+        });
+      })
+      .catch(error => {
+        if (!current) return;
+        setAirportError((error as Error).message);
+      })
+      .finally(() => { if (current) setLoadingAirports(false); });
+    return () => { current = false; };
+  }, [selectedCountry]);
+  return <div className="destination-picker">
+    <label>Target country<select name="targetCountry" value={selectedCountry} required onChange={event => {
+      const next = event.target.value; setSelectedCountry(next); setSelectedAirports([]); setOptions([]);
+    }}>
+      <option value="" disabled>Choose a country</option>{destinationCountries.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
     </select></label>
-    <p className="filter-note destination-help">Leave both blank to explore all destinations. A city narrows results further. With a country selected, offers with an unidentified country are excluded.</p>
-  </>;
+    {!!selectedCountry && <fieldset><legend>Destination airports · {selectedAirports.length} of 5 selected</legend>
+      <div className="checkbox-row">{options.map(airport => <label key={airport.code}><input type="checkbox" name="targetAirports" value={airport.code}
+        checked={selectedAirports.includes(airport.code)} disabled={!selectedAirports.includes(airport.code) && selectedAirports.length >= 5}
+        onChange={event => setSelectedAirports(current => event.target.checked ? [...current, airport.code] : current.filter(value => value !== airport.code))} />
+        {airport.city} · {airport.name} ({airport.code})</label>)}</div>
+      {loadingAirports && <small>Matching major cities to airports…</small>}
+      {airportError && <small className="destination-error">Could not load destination airports. {airportError}</small>}
+    </fieldset>}
+    <p className="filter-note destination-help">A country is required. Five major airports are selected initially; deselect one to choose another, with a maximum of five.</p>
+  </div>;
 }
 
 function SearchForm({ onSave, onCancel, busy, initial }: {
@@ -219,11 +258,12 @@ function SearchForm({ onSave, onCancel, busy, initial }: {
     const ages = String(f.get('childrenAges') ?? '').trim();
     if (ages && !/^\d{1,2}(\s*,\s*\d{1,2})*$/.test(ages)) { setLocalError('Enter children’s ages as numbers separated by commas.'); return; }
     const result = searchSchema.safeParse({ name: String(f.get('name')), departure: String(f.get('departure')),
-      targetCity: String(f.get('targetCity') ?? '').trim(), targetCountry: String(f.get('targetCountry') ?? ''),
+      targetCities: [], targetAirports: f.getAll('targetAirports').map(value => String(value)), targetCountry: String(f.get('targetCountry') ?? ''),
       nearbyAirports: f.has('nearbyAirports'), earliestDeparture: String(f.get('earliestDeparture')), latestReturn: String(f.get('latestReturn')),
       minNights: Number(f.get('minNights')), maxNights: Number(f.get('maxNights')), adults: Number(f.get('adults')),
       rooms: Number(f.get('rooms')),
-      childrenAges: ages ? ages.split(',').map(v => Number(v.trim())) : [], currency: f.get('currency') as SearchCriteria['currency'],
+      childrenAges: ages ? ages.split(',').map(v => Number(v.trim())) : [], lapInfants: Number(f.get('lapInfants')),
+      currency: f.get('currency') as SearchCriteria['currency'],
       tripTypes: f.getAll('tripTypes') as SearchCriteria['tripTypes'], swimming: f.get('swimming') as SearchCriteria['swimming'],
       preferences: String(f.get('preferences')), active: f.has('active') });
     if (!result.success) { setLocalError(result.error.issues.map(issue => issue.message).join('; ')); return; }
@@ -234,13 +274,15 @@ function SearchForm({ onSave, onCancel, busy, initial }: {
     <fieldset className="search-form-fields" disabled={busy}>
     <div className="form-grid"><label>Give this search a name<input name="name" defaultValue={initial?.name} placeholder="A sunny February escape" required maxLength={100} /></label>
       <label>Departure city or airport<input name="departure" defaultValue={initial?.departure} placeholder="Bucharest / OTP" required minLength={2} maxLength={120} /></label>
-      <DestinationFields city={initial?.targetCity} country={initial?.targetCountry} />
+      <DestinationFields airports={initial?.targetAirports} country={initial?.targetCountry} />
       <label>Earliest departure<input name="earliestDeparture" type="date" defaultValue={initial?.earliestDeparture ?? future(60)} min={initial ? undefined : future(0)} required /></label>
       <label>Latest return<input name="latestReturn" type="date" defaultValue={initial?.latestReturn ?? future(90)} min={initial ? undefined : future(1)} required /></label>
       <label>Minimum nights<input name="minNights" type="number" min={1} max={60} defaultValue={initial?.minNights ?? 5} required /></label>
       <label>Maximum nights<input name="maxNights" type="number" min={1} max={60} defaultValue={initial?.maxNights ?? 8} required /></label>
       <label>Adults<input name="adults" type="number" min={1} max={8} defaultValue={initial?.adults ?? 2} required /></label>
       <label>Children’s ages at departure<input name="childrenAges" defaultValue={initial?.childrenAges.join(', ')} placeholder="e.g. 4, 8 (leave empty if none)" maxLength={30} /></label>
+      <label>Infants under 2 travelling on a lap<input name="lapInfants" type="number" min={0} max={6} defaultValue={initial?.lapInfants ?? 0} required />
+        <small>Other infants are priced with their own seat.</small></label>
       <label>Rooms for your stay<input name="rooms" type="number" min={1} max={6} defaultValue={initial?.rooms ?? 1} required /></label>
       <label>Price currency<select name="currency" defaultValue={initial?.currency ?? 'EUR'}>{['EUR', 'RON', 'USD', 'GBP'].map(c => <option key={c}>{c}</option>)}</select></label>
       <label>Swimming preference<select name="swimming" defaultValue={initial?.swimming ?? 'any'}><option value="any">No preference</option><option value="sea">Sea swimming</option><option value="heated-pool">Heated pool</option><option value="either">Sea or heated pool</option></select></label>
