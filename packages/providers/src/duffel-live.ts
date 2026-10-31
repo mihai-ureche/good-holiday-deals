@@ -15,8 +15,6 @@ export type DuffelLiveOptions = {
   concurrency?: number;
   maxSearches?: number;
   maxFlightOffers?: number;
-  maxStayResults?: number;
-  stayRadiusKm?: number;
   cityLookup?: (country: string, signal: AbortSignal) => Promise<string[]>;
 };
 
@@ -83,13 +81,13 @@ async function suggestions(query: string, accessToken: string, request: Fetch, s
 }
 
 async function resolvePlace(query: string, expectedCountry: string, accessToken: string, request: Fetch,
-  signal: AbortSignal, requireCoordinates = false): Promise<DuffelPlace> {
+  signal: AbortSignal): Promise<DuffelPlace> {
   const places = await suggestions(query, accessToken, request, signal);
   const code = /^[A-Za-z]{3}$/.test(query.trim()) ? query.trim().toUpperCase() : '';
   const country = countryCode(expectedCountry) ?? expectedCountry.toUpperCase();
   const matching = places.filter(place => !country || place.country === country);
   const found = matching.find(place => place.code === code)
-    ?? (requireCoordinates ? matching.find(place => place.latitude !== undefined && place.longitude !== undefined) : matching[0])
+    ?? matching[0]
     ?? (!country ? places[0] : undefined);
   if (!found) throw new Error(`Duffel could not resolve ${query} to a place${country ? ` in ${country}` : ''}`);
   return found;
@@ -146,26 +144,11 @@ function flightSummary(offer: Json): string {
   }).filter(Boolean).join(' + ')).filter(Boolean).join(' / ');
 }
 
-function rates(accommodation: Json): { room: Json; rate: Json }[] {
-  return list(accommodation.rooms).flatMap(rawRoom => {
-    const room = object(rawRoom);
-    return list(room.rates).map(rawRate => ({ room, rate: object(rawRate) }));
-  });
-}
-
-function inclusions(rate: Json): string[] {
-  const board = text(rate.board_type).replaceAll('_', ' ');
-  const benefits = list(rate.benefits).map(value => text(object(value).title)).filter(Boolean);
-  return [...new Set([...(board ? [board] : []), ...benefits])].slice(0, 20);
-}
-
 export function createDuffelLiveProvider(options: DuffelLiveOptions): TravelProvider {
   const request = options.fetch ?? fetch;
   const concurrency = Math.max(1, Math.min(options.concurrency ?? 2, 4));
   const maxSearches = Math.max(1, Math.min(options.maxSearches ?? 10, 30));
   const maxFlightOffers = Math.max(1, Math.min(options.maxFlightOffers ?? 3, 5));
-  const maxStayResults = Math.max(1, Math.min(options.maxStayResults ?? 1, 3));
-  const stayRadiusKm = Math.max(1, Math.min(options.stayRadiusKm ?? 20, 100));
 
   async function post(path: string, data: unknown, signal: AbortSignal): Promise<Json> {
     const response = await request(`${api}${path}`, { method: 'POST', signal, headers: headers(options.accessToken, true),
@@ -173,18 +156,12 @@ export function createDuffelLiveProvider(options: DuffelLiveOptions): TravelProv
     return responseJson(response);
   }
 
-  async function postEmpty(path: string, signal: AbortSignal): Promise<Json> {
-    const response = await request(`${api}${path}`, { method: 'POST', signal, headers: headers(options.accessToken) });
-    return responseJson(response);
-  }
-
-  async function createBookingLink(criteria: SearchCriteria, wantsFlight: boolean, wantsStay: boolean,
-    signal: AbortSignal): Promise<string> {
+  async function createBookingLink(criteria: SearchCriteria, signal: AbortSignal): Promise<string> {
     const root = new URL(options.appUrl);
     const callback = new URL('/', root).href;
     const response = await post('/links/sessions', { reference: `holiday-${Date.now()}`, success_url: callback,
       failure_url: callback, abandonment_url: callback, traveller_currency: criteria.currency,
-      flights: { enabled: String(wantsFlight) }, stays: { enabled: String(wantsStay) } }, signal);
+      flights: { enabled: 'true' }, stays: { enabled: 'false' } }, signal);
     const data = object(response.data);
     const url = text(data.url) || text(data.link);
     if (!url.startsWith('https://')) throw new Error('Duffel Links did not return a secure hosted booking URL');
@@ -223,79 +200,24 @@ export function createDuffelLiveProvider(options: DuffelLiveOptions): TravelProv
     }).sort((a, b) => a.totalMinor - b.totalMinor).slice(0, maxFlightOffers);
   }
 
-  async function stayOffers(criteria: SearchCriteria, destination: DuffelPlace, pair: FlightDatePair,
-    bookingUrl: string, signal: AbortSignal): Promise<Offer[]> {
-    if (destination.latitude === undefined || destination.longitude === undefined) return [];
-    const guests = [...Array.from({ length: criteria.adults }, () => ({ type: 'adult' })),
-      ...criteria.childrenAges.map(age => ({ type: 'child', age }))];
-    const response = await post('/stays/search', { rooms: criteria.rooms ?? 1, guests,
-      check_in_date: pair.departureDate, check_out_date: pair.returnDate,
-      location: { radius: stayRadiusKm, geographic_coordinates: { latitude: destination.latitude, longitude: destination.longitude } },
-    }, signal);
-    const results = list(object(response.data).results).map(object).filter(result => text(result.id) && future(text(result.expires_at)))
-      .map(result => ({ result, minor: amountMinor(result.cheapest_rate_total_amount, result.cheapest_rate_currency, criteria.currency) }))
-      .filter((value): value is { result: Json; minor: number } => value.minor !== null)
-      .sort((a, b) => a.minor - b.minor).slice(0, maxStayResults);
-    const offers: Offer[] = [];
-    for (const { result } of results) {
-      const detailed = object((await postEmpty(`/stays/search_results/${encodeURIComponent(text(result.id))}/actions/fetch_all_rates`, signal)).data);
-      const choice = rates(object(detailed.accommodation)).map(value => ({ ...value,
-        minor: amountMinor(value.rate.total_amount, value.rate.total_currency, criteria.currency) }))
-        .filter((value): value is { room: Json; rate: Json; minor: number } => value.minor !== null && !!text(value.rate.id)
-          && (!text(value.rate.expires_at) || future(text(value.rate.expires_at))))
-        .sort((a, b) => a.minor - b.minor)[0];
-      if (!choice) continue;
-      const quote = object((await post('/stays/quotes', { rate_id: text(choice.rate.id) }, signal)).data);
-      const totalMinor = amountMinor(quote.total_amount, quote.total_currency, criteria.currency);
-      const id = text(quote.id);
-      if (!id || !totalMinor) continue;
-      const accommodation = object(quote.accommodation);
-      const address = object(object(accommodation.location).address);
-      const hotel = text(accommodation.name) || 'Duffel accommodation';
-      const city = text(address.city_name) || destination.city;
-      const checkedAt = new Date().toISOString();
-      const expiresAt = text(choice.rate.expires_at) || text(result.expires_at);
-      offers.push(offerSchema.parse({ provider: 'duffel', externalId: id, title: hotel,
-        destination: city, destinationCountry: text(address.country_code) || criteria.targetCountry,
-        type: 'stay', departureDate: text(quote.check_in_date) || pair.departureDate,
-        returnDate: text(quote.check_out_date) || pair.returnDate, totalMinor, currency: criteria.currency,
-        priceBasis: 'family-total', adults: criteria.adults, childrenAges: criteria.childrenAges, url: bookingUrl,
-        booking: { reference: id, description: `Final Duffel stay quote for ${criteria.rooms ?? 1} room(s). `
-          + 'Duffel Links performs a new availability check before purchase, so reconfirm the property, rooms and total there.',
-        linkKind: 'specific-offer', rooms: criteria.rooms ?? 1, ...(future(expiresAt) ? { expiresAt } : {}),
-        purchaseLinks: [{ label: 'Recheck and book with Duffel', url: bookingUrl }] }, inclusions: inclusions(choice.rate),
-        swimming: 'unknown', swimmingEvidence: '', checkedAt }));
-    }
-    return offers;
-  }
-
-  return { id: 'duffel', liveRoundTripFlights: true, liveStays: true, timeoutMs: 300_000,
+  return { id: 'duffel', liveRoundTripFlights: true, timeoutMs: 300_000,
     search: async (criteria, signal) => {
-      const wantsFlight = criteria.tripTypes.includes('flight');
-      const wantsStay = criteria.tripTypes.includes('stay');
-      if (!wantsFlight && !wantsStay) return [];
-      const origin = wantsFlight ? await resolvePlace(criteria.departure, '', options.accessToken, request, signal) : null;
+      if (!criteria.tripTypes.includes('flight')) return [];
+      const origin = await resolvePlace(criteria.departure, '', options.accessToken, request, signal);
       const destinationQueries = criteria.targetAirports.length ? criteria.targetAirports : criteria.targetCities.length
         ? criteria.targetCities : (await (options.cityLookup ?? (async (country, lookupSignal) =>
           (await destinationCities(country, fetch, lookupSignal)).slice(0, 5)))(criteria.targetCountry, signal));
       const destinationResults = await Promise.allSettled(destinationQueries
-        .map(value => resolvePlace(value, criteria.targetCountry, options.accessToken, request, signal, wantsStay)));
+        .map(value => resolvePlace(value, criteria.targetCountry, options.accessToken, request, signal)));
       const destinations = destinationResults.filter((value): value is PromiseFulfilledResult<DuffelPlace> => value.status === 'fulfilled')
         .map(value => value.value).filter((value, index, values) => values.findIndex(other => other.code === value.code) === index);
       if (!destinations.length) throw new Error('Duffel could not resolve any selected destination');
-      const bookingUrl = await createBookingLink(criteria, wantsFlight, wantsStay, signal);
+      const bookingUrl = await createBookingLink(criteria, signal);
       const pairsPerDestination = Math.max(1, Math.floor(maxSearches / destinations.length));
       const pairs = sampledPairs(criteria, pairsPerDestination);
       const tasks = destinations.flatMap(destination => pairs.map(pair => ({ destination, pair }))).slice(0, maxSearches);
-      const results = await concurrentMap(tasks, concurrency, async ({ destination, pair }) => {
-        const requests: Promise<Offer[]>[] = [];
-        if (wantsFlight && origin) requests.push(flightOffers(criteria, origin, destination, pair, bookingUrl, signal));
-        if (wantsStay) requests.push(stayOffers(criteria, destination, pair, bookingUrl, signal));
-        const searched = await Promise.allSettled(requests);
-        const completed = searched.filter((value): value is PromiseFulfilledResult<Offer[]> => value.status === 'fulfilled');
-        if (!completed.length) throw searched.find(value => value.status === 'rejected')?.reason;
-        return completed.flatMap(value => value.value);
-      });
+      const results = await concurrentMap(tasks, concurrency, ({ destination, pair }) =>
+        flightOffers(criteria, origin, destination, pair, bookingUrl, signal));
       const successful = results.filter((value): value is PromiseFulfilledResult<Offer[]> => value.status === 'fulfilled');
       if (!successful.length && results.length) throw new Error('Every Duffel search failed');
       return successful.flatMap(value => value.value).sort((a, b) => a.totalMinor - b.totalMinor);

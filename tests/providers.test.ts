@@ -2,20 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { searchSchema } from '../packages/shared/src/index.js';
 import { providers } from '../packages/providers/src/index.js';
-import { combineTrips } from '../packages/shared/src/combinations.js';
 import { sourceCatalog } from '../packages/providers/src/catalog.js';
 import { createIgnavLiveProvider } from '../packages/providers/src/ignav-live.js';
 import { createDuffelLiveProvider } from '../packages/providers/src/duffel-live.js';
-import { createSabreLiveProvider } from '../packages/providers/src/sabre-live.js';
 import { clearDestinationCityCache, destinationCities, majorDestinationCities } from '../packages/providers/src/destination-cities.js';
 
 const checkedAt = new Date().toISOString();
 const criteria = searchSchema.parse({ name: 'Family trip', departure: 'OTP', targetCountry: 'IT', targetCities: ['Rome'], earliestDeparture: '2027-02-01',
   latestReturn: '2027-02-28', minNights: 5, maxNights: 8, adults: 2, childrenAges: [4, 8], tripTypes: ['flight', 'stay', 'package'] });
-test('only Ignav, Duffel, and Sabre are advertised and registered', () => {
-  assert.deepEqual(sourceCatalog.map(source => source.id), ['ignav', 'duffel', 'sabre']);
-  assert.ok(providers.length <= 3);
-  assert.ok(providers.every(provider => ['ignav', 'duffel', 'sabre'].includes(provider.id)));
+test('only Ignav and flight-only Duffel are advertised and registered', () => {
+  assert.deepEqual(sourceCatalog.map(source => source.id), ['ignav', 'duffel']);
+  assert.ok(providers.length <= 2);
+  assert.ok(providers.every(provider => ['ignav', 'duffel'].includes(provider.id)));
 });
 test('country city lookup ranks by population and limits the automatic selection to five', async () => {
   clearDestinationCityCache();
@@ -31,11 +29,11 @@ test('country city lookup ranks by population and limits the automatic selection
   assert.deepEqual(await majorDestinationCities('IT', request), ['Largest', 'Second', 'Third', 'Fourth', 'Fifth']);
   clearDestinationCityCache();
 });
-test('Duffel searches flights and stays together and produces matching exact quotes', async () => {
+test('Duffel searches flights only even when the saved search also requests stays', async () => {
   const calls: { url: string; body: any }[] = [];
   const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
   const provider = createDuffelLiveProvider({ accessToken: 'duffel-test-token', appUrl: 'https://travel.example/',
-    maxSearches: 1, maxFlightOffers: 1, maxStayResults: 1,
+    maxSearches: 1, maxFlightOffers: 1,
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -52,30 +50,17 @@ test('Duffel searches flights and stays together and produces matching exact quo
           { segments: [{ marketing_carrier: { iata_code: 'EX' }, marketing_carrier_flight_number: '100' }] },
           { segments: [{ marketing_carrier: { iata_code: 'EX' }, marketing_carrier_flight_number: '101' }] },
         ] }] } });
-      if (url.endsWith('/stays/search')) return json({ data: { results: [{ id: 'srr_test', expires_at: '2099-01-01T00:00:00Z',
-        cheapest_rate_total_amount: '500.00', cheapest_rate_currency: 'EUR' }] } });
-      if (url.includes('/stays/search_results/srr_test/')) return json({ data: { accommodation: { rooms: [{ name: 'Family room', rates: [{
-        id: 'rat_test', total_amount: '500.00', total_currency: 'EUR', expires_at: '2099-01-01T00:00:00Z',
-        board_type: 'breakfast_included', benefits: [{ title: 'Breakfast' }],
-      }] }] } } });
-      if (url.endsWith('/stays/quotes')) return json({ data: { id: 'quo_test', total_amount: '500.00', total_currency: 'EUR', rooms: 1,
-        check_in_date: '2027-02-01', check_out_date: '2027-02-06', accommodation: { name: 'Rome Family Hotel',
-          location: { address: { city_name: 'Rome', country_code: 'IT' } } } } });
       return json({ errors: [{ message: `Unexpected test URL ${url}` }] });
     } });
   const offers = await provider.search!(criteria, AbortSignal.timeout(5000));
-  assert.deepEqual(offers.map(offer => offer.type).sort(), ['flight', 'stay']);
-  assert.equal(offers.find(offer => offer.type === 'flight')?.totalMinor, 40000);
-  assert.equal(offers.find(offer => offer.type === 'stay')?.totalMinor, 50000);
-  assert.equal(combineTrips(criteria, offers).length, 1);
+  assert.deepEqual(offers.map(offer => offer.type), ['flight']);
+  assert.equal(offers[0]?.totalMinor, 40000);
   assert.ok(calls.some(call => call.url.includes('/air/offer_requests')));
-  assert.ok(calls.some(call => call.url.endsWith('/stays/search')));
-  assert.ok(calls.some(call => call.url.includes('/stays/search_results/srr_test/')));
-  assert.ok(calls.some(call => call.url.endsWith('/stays/quotes')));
+  assert.ok(!calls.some(call => call.url.includes('/stays/')));
   const session = calls.find(call => call.url.endsWith('/links/sessions'))?.body.data;
-  assert.deepEqual({ flights: session.flights.enabled, stays: session.stays.enabled }, { flights: 'true', stays: 'true' });
+  assert.deepEqual({ flights: session.flights.enabled, stays: session.stays.enabled }, { flights: 'true', stays: 'false' });
 });
-test('Duffel only calls the product APIs requested by the saved search', async () => {
+test('Duffel performs no calls for a stay-only saved search', async () => {
   const calls: string[] = [];
   const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
   const provider = createDuffelLiveProvider({ accessToken: 'duffel-test-token', appUrl: 'https://travel.example/', maxSearches: 1,
@@ -86,64 +71,11 @@ test('Duffel only calls the product APIs requested by the saved search', async (
         latitude: 41.8, longitude: 12.25 }] });
       if (url.endsWith('/links/sessions')) return json({ data: { url: 'https://links.duffel.com/session-test' } });
       if (url.includes('/air/offer_requests')) return json({ data: { offers: [] } });
-      if (url.endsWith('/stays/search')) return json({ data: { results: [] } });
       return json({ errors: [{ message: `Unexpected test URL ${url}` }] });
     } });
-  await provider.search!(searchSchema.parse({ ...criteria, tripTypes: ['flight'] }), AbortSignal.timeout(5000));
-  assert.ok(calls.some(url => url.includes('/air/offer_requests')));
-  assert.ok(!calls.some(url => url.endsWith('/stays/search')));
-  calls.length = 0;
-  await provider.search!(searchSchema.parse({ ...criteria, tripTypes: ['stay'] }), AbortSignal.timeout(5000));
-  assert.ok(!calls.some(url => url.includes('/air/offer_requests')));
-  assert.ok(calls.some(url => url.endsWith('/stays/search')));
-});
-test('Sabre authenticates with v2 OAuth and searches flights and stays together', async () => {
-  const calls: { url: string; body: any; authorization: string }[] = [];
-  const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
-  const provider = createSabreLiveProvider({ userId: 'V1:test-user:TEST:EXT', password: 'test-password',
-    pseudoCityCode: 'F9CE', bookingUrl: 'https://travel.example/sabre', maxSearches: 1,
-    maxFlightOffers: 1, maxStayResults: 1,
-    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const body = init?.body && String(init.body).startsWith('{') ? JSON.parse(String(init.body)) : init?.body;
-      calls.push({ url, body, authorization: new Headers(init?.headers).get('authorization') ?? '' });
-      if (url.endsWith('/v2/auth/token')) return json({ access_token: 'sabre-test-token', expires_in: 604800 });
-      if (url.endsWith('/v5/offers/shop')) return json({ groupedItineraryResponse: {
-        scheduleDescs: [
-          { id: 1, carrier: { marketing: 'EX', marketingFlightNumber: 100 } },
-          { id: 2, carrier: { marketing: 'EX', marketingFlightNumber: 101 } },
-        ], legDescs: [{ id: 1, schedules: [{ ref: 1 }] }, { id: 2, schedules: [{ ref: 2 }] }],
-        itineraryGroups: [{ groupDescription: { legDescriptions: [
-          { departureDate: '2027-02-01', departureLocation: 'OTP', arrivalLocation: 'FCO' },
-          { departureDate: '2027-02-06', departureLocation: 'FCO', arrivalLocation: 'OTP' },
-        ] }, itineraries: [{ id: 7, legs: [{ ref: 1 }, { ref: 2 }], pricingInformation: [{ pricingSubsource: 'HPIS',
-          fare: { validatingCarrierCode: 'EX', totalFare: { totalPrice: 420, currency: 'EUR' } } }] }] }],
-      } });
-      if (url.endsWith('/v5/get/hotelavail')) return json({ GetHotelAvailRS: { HotelAvailInfos: { HotelAvailInfo: [{
-        HotelInfo: { HotelCode: '10001', HotelName: 'Sabre Family Hotel', LocationInfo: { Address: {
-          CityName: { value: 'Rome' }, CountryName: { Code: 'IT' },
-        } } }, HotelRateInfo: { Rooms: { Room: [{ RoomIndex: 1, RatePlans: { RatePlan: [{ RateKey: 'rate-key-1',
-          ConvertedRateInfo: { ApproxTotalPrice: '510.00', CurrencyCode: 'EUR' }, MealsIncluded: {
-            MealPlanIndicator: true, MealPlanDescription: 'Breakfast included',
-          } }] } }] } },
-      }] } } });
-      return json({ message: `Unexpected test URL ${url}` });
-    } });
-  const exact = searchSchema.parse({ ...criteria, targetCities: [], targetAirports: ['FCO'],
-    earliestDeparture: '2027-02-01', latestReturn: '2027-02-06', minNights: 5, maxNights: 5 });
-  const offers = await provider.search!(exact, AbortSignal.timeout(5000));
-  assert.deepEqual(offers.map(offer => offer.type).sort(), ['flight', 'stay']);
-  assert.equal(offers.find(offer => offer.type === 'flight')?.totalMinor, 42000);
-  assert.equal(offers.find(offer => offer.type === 'stay')?.totalMinor, 51000);
-  assert.equal(combineTrips(exact, offers).length, 1);
-  assert.equal(calls.filter(call => call.url.endsWith('/v2/auth/token')).length, 1);
-  assert.ok(calls.some(call => call.url.endsWith('/v5/offers/shop')));
-  assert.ok(calls.some(call => call.url.endsWith('/v5/get/hotelavail')));
-  const encodedUser = Buffer.from('V1:test-user:TEST:EXT').toString('base64');
-  const encodedPassword = Buffer.from('test-password').toString('base64');
-  assert.equal(calls[0]?.authorization, `Basic ${Buffer.from(`${encodedUser}:${encodedPassword}`).toString('base64')}`);
-  assert.equal(calls.find(call => call.url.endsWith('/v5/offers/shop'))?.body.OTA_AirLowFareSearchRQ.POS.Source[0].PseudoCityCode, 'F9CE');
-  assert.equal(calls.find(call => call.url.endsWith('/v5/get/hotelavail'))?.body.GetHotelAvailRQ.SearchCriteria.GeoSearch.GeoRef.RefPoint.Value, 'FCO');
+  const offers = await provider.search!(searchSchema.parse({ ...criteria, tripTypes: ['stay'] }), AbortSignal.timeout(5000));
+  assert.deepEqual(offers, []);
+  assert.deepEqual(calls, []);
 });
 test('Ignav scans all default cities, exact-checks candidates, and retains exact full-trip booking links', async () => {
   const requests: { url: string; body: any }[] = [];
