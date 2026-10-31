@@ -91,6 +91,14 @@ function offerCandidates(property: Json): Json[] {
       remarks: [...list(offer.remarks), ...list(room.remarks), ...list(object(rawRate).remarks)],
     })));
     return [offer, ...rooms.map(room => ({ ...offer, ...room, source: offer.source })), ...roomRates];
+  }).sort((a, b) => {
+    const priority = (value: Json) => {
+      const direct = secureUrl(value.link);
+      if (direct && !/\.google\./i.test(new URL(direct).hostname)) return 0;
+      if (direct) return 1;
+      return secureUrl(value.tracking_link) ? 2 : 3;
+    };
+    return priority(a) - priority(b);
   });
 }
 
@@ -113,7 +121,7 @@ function propertyOffers(property: Json, criteria: SearchCriteria, pair: FlightDa
     const url = secureUrl(candidate.link, candidate.tracking_link);
     const source = text(candidate.source) || 'hotel partner';
     if ((Number.isFinite(guests) && guests !== party) || !price || !url) return [];
-    const key = `${source}:${price}:${url}`;
+    const key = `${source}:${price}`;
     if (seen.has(key)) return [];
     seen.add(key);
     const remarks = list(candidate.remarks).map(text).filter(Boolean);
@@ -138,7 +146,7 @@ export function createSearchApiLiveProvider(options: SearchApiLiveOptions): Trav
   const request = options.fetch ?? fetch;
   const concurrency = Math.max(1, Math.min(options.concurrency ?? 2, 4));
   const maxSearches = Math.max(1, Math.min(options.maxSearches ?? 5, 15));
-  const maxProperties = Math.max(1, Math.min(options.maxProperties ?? 1, 3));
+  const maxProperties = Math.max(1, Math.min(options.maxProperties ?? 3, 3));
   const maxOffers = Math.max(1, Math.min(options.maxOffersPerProperty ?? 3, 5));
 
   async function get(parameters: Record<string, string>, signal: AbortSignal): Promise<Json> {
@@ -160,17 +168,25 @@ export function createSearchApiLiveProvider(options: SearchApiLiveOptions): Trav
     const result = await get({ engine: 'google_hotels', q: target.query, property_type: 'hotel', ...common }, signal);
     if (!responseMatches(result, criteria, pair)) return [];
     const expectedCountry = countryCode(criteria.targetCountry);
-    const properties = list(result.properties).map(object).filter(property => text(property.property_token)
+    const properties = list(result.properties).map(object).filter(property => text(property.type) === 'hotel'
+      && text(property.property_token)
       && countryCode(text(property.country)) === expectedCountry)
       .sort((a, b) => (totalMinor(a.total_price) ?? Number.MAX_SAFE_INTEGER)
         - (totalMinor(b.total_price) ?? Number.MAX_SAFE_INTEGER)).slice(0, maxProperties);
-    const details = await concurrentMap(properties, concurrency, async property => {
-      const detail = await get({ engine: 'google_hotels_property', property_token: text(property.property_token), ...common }, signal);
-      if (!responseMatches(detail, criteria, pair)) return [];
-      return propertyOffers({ ...property, ...object(detail.property) }, criteria, pair, target, maxOffers);
-    });
-    return details.filter((value): value is PromiseFulfilledResult<Offer[]> => value.status === 'fulfilled')
-      .flatMap(value => value.value);
+    let failedLookups = 0;
+    for (const property of properties) {
+      try {
+        const detail = await get({ engine: 'google_hotels_property', property_token: text(property.property_token), ...common }, signal);
+        if (!responseMatches(detail, criteria, pair)) continue;
+        const offers = propertyOffers({ ...property, ...object(detail.property) }, criteria, pair, target, maxOffers);
+        if (offers.length) return offers;
+      } catch (error) {
+        if (signal.aborted) throw error;
+        failedLookups++;
+      }
+    }
+    if (properties.length && failedLookups === properties.length) throw new Error('Every SearchAPI property lookup failed');
+    return [];
   }
 
   return { id: 'searchapi', liveStays: true, timeoutMs: 120_000,

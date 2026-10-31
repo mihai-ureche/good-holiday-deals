@@ -88,7 +88,7 @@ test('SearchAPI returns exact family hotel rates and never invokes its flight en
       const common = { check_in_date: '2027-02-20', check_out_date: '2027-02-24', currency: 'EUR', adults: 2,
         children_ages: '4,8' };
       if (url.searchParams.get('engine') === 'google_hotels') return json({ search_parameters: { ...common, engine: 'google_hotels' },
-        properties: [{ property_token: 'property-token', name: 'Family Hotel', city: 'Rome', country: 'IT',
+        properties: [{ type: 'hotel', property_token: 'property-token', name: 'Family Hotel', city: 'Rome', country: 'IT',
           total_price: { extracted_price: 650.50 } }] });
       if (url.searchParams.get('engine') === 'google_hotels_property') return json({
         search_parameters: { ...common, engine: 'google_hotels_property' }, property: { property_token: 'property-token',
