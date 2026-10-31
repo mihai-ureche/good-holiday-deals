@@ -88,7 +88,7 @@ function App() {
           <p>{me.liveFlightPricing ? 'Live dated round trips are connected.' : 'Connect Ignav or Duffel for flights.'} {me.liveStayPricing ? 'Live accommodation quotes are connected.' : 'No live accommodation provider is configured.'}</p>
           <details className="source-details"><summary>View your travel sources</summary><div className="source-grid">{me.sources.map(source =>
             <div key={source.id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.name} ↗</a>
-              <span className="source-mode">{source.mode === 'live-flights-stays' ? 'Live flight + stay quotes connected' : source.mode === 'live-flights' ? 'Live flight quotes connected' : 'API credentials required'}</span><small>{source.detail}</small></div>)}</div></details>
+              <span className="source-mode">{source.mode === 'live-flights-stays' ? 'Live flight + stay quotes connected' : source.mode === 'live-flights' ? 'Live flight quotes connected' : source.mode === 'live-stays' ? 'Live stay quotes connected' : 'API credentials required'}</span><small>{source.detail}</small></div>)}</div></details>
         </div></div>
         <section className="section"><div className="section-heading"><div><p className="eyebrow">01 / THE WISH LIST</p><h2>Where could you go?</h2></div>
           <button className="primary" disabled={busy} onClick={() => { setShowForm(!showForm); setEditing(null); }}>{showForm ? 'Close form' : '+ New search'}</button></div>

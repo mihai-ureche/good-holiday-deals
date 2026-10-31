@@ -113,6 +113,7 @@ export async function createApp() {
         const provider = providers.find(value => value.id === source.id);
         if (provider?.liveRoundTripFlights && provider.liveStays) return { ...source, mode: 'live-flights-stays', detail: 'Live flight and accommodation search is connected.' };
         if (provider?.liveRoundTripFlights) return { ...source, mode: 'live-flights', detail: 'Live party-priced round-trip search is connected.' };
+        if (provider?.liveStays) return { ...source, mode: 'live-stays', detail: 'Live party-priced accommodation search is connected.' };
         return source;
       }), liveFlightPricing, liveStayPricing };
   });

@@ -28,7 +28,10 @@ export function combineTrips(criteria: SearchCriteria, quotes: Offer[], _discove
   const travelers = criteria.adults + criteria.childrenAges.length;
   const trips: CombinedTrip[] = [];
   for (const flight of exact.filter(q => q.type === 'flight')) for (const stay of exact.filter(q => q.type === 'stay')) {
-    if (destinationKey(flight.destination) !== destinationKey(stay.destination)
+    const sameDestination = flight.destinationAirport && stay.destinationAirport
+      ? flight.destinationAirport === stay.destinationAirport
+      : destinationKey(flight.destination) === destinationKey(stay.destination);
+    if (!sameDestination
       || flight.currency !== stay.currency || flight.departureDate !== stay.departureDate || flight.returnDate !== stay.returnDate) continue;
     const totalMinor = flight.totalMinor + stay.totalMinor;
     if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0) continue;

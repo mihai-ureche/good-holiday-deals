@@ -38,6 +38,11 @@ test('sum of actual family quotes requires the same party, exact dates and desti
   assert.equal(combineTrips(criteria, [quote, { ...hotel, returnDate: '2027-02-18' }], []).length, 0);
   assert.equal(combineTrips(criteria, [quote, { ...hotel, priceBasis: 'indicative' }], []).length, 0);
   assert.equal(combineTrips(criteria, [quote, { ...hotel, destination: 'Paris' }], []).length, 0);
+  const airportCriteria = searchSchema.parse({ ...criteria, targetCities: [], targetAirports: ['FCO'] });
+  assert.equal(combineTrips(airportCriteria, [{ ...quote, destination: 'Fiumicino', destinationAirport: 'FCO', destinationCountry: 'IT' },
+    { ...hotel, destination: 'Leonardo Da Vinci Airport', destinationAirport: 'FCO', destinationCountry: 'IT' }], []).length, 1);
+  assert.equal(combineTrips(airportCriteria, [{ ...quote, destinationAirport: 'FCO', destinationCountry: 'IT' },
+    { ...hotel, destinationAirport: 'MXP', destinationCountry: 'IT' }], []).length, 0);
   assert.equal(combineTrips(criteria, [quote, { ...hotel, booking: undefined }], []).length, 0);
   assert.equal(combineTrips(criteria, [{ ...quote, checkedAt: new Date(Date.now() - 49 * 3600000).toISOString() }, hotel], []).length, 0);
   assert.equal(trip?.flight.booking?.reference, 'flight-quote-1');

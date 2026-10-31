@@ -5,15 +5,16 @@ import { providers } from '../packages/providers/src/index.js';
 import { sourceCatalog } from '../packages/providers/src/catalog.js';
 import { createIgnavLiveProvider } from '../packages/providers/src/ignav-live.js';
 import { createDuffelLiveProvider } from '../packages/providers/src/duffel-live.js';
+import { createSearchApiLiveProvider } from '../packages/providers/src/searchapi-live.js';
 import { clearDestinationCityCache, destinationCities, majorDestinationCities } from '../packages/providers/src/destination-cities.js';
 
 const checkedAt = new Date().toISOString();
 const criteria = searchSchema.parse({ name: 'Family trip', departure: 'OTP', targetCountry: 'IT', targetCities: ['Rome'], earliestDeparture: '2027-02-01',
   latestReturn: '2027-02-28', minNights: 5, maxNights: 8, adults: 2, childrenAges: [4, 8], tripTypes: ['flight', 'stay', 'package'] });
-test('only Ignav and flight-only Duffel are advertised and registered', () => {
-  assert.deepEqual(sourceCatalog.map(source => source.id), ['ignav', 'duffel']);
-  assert.ok(providers.length <= 2);
-  assert.ok(providers.every(provider => ['ignav', 'duffel'].includes(provider.id)));
+test('Ignav, flight-only Duffel, and stay-only SearchAPI are advertised and registered', () => {
+  assert.deepEqual(sourceCatalog.map(source => source.id), ['ignav', 'duffel', 'searchapi']);
+  assert.ok(providers.length <= 3);
+  assert.ok(providers.every(provider => ['ignav', 'duffel', 'searchapi'].includes(provider.id)));
 });
 test('country city lookup ranks by population and limits the automatic selection to five', async () => {
   clearDestinationCityCache();
@@ -75,6 +76,50 @@ test('Duffel performs no calls for a stay-only saved search', async () => {
     } });
   const offers = await provider.search!(searchSchema.parse({ ...criteria, tripTypes: ['stay'] }), AbortSignal.timeout(5000));
   assert.deepEqual(offers, []);
+  assert.deepEqual(calls, []);
+});
+test('SearchAPI returns exact family hotel rates and never invokes its flight engine', async () => {
+  const calls: { url: URL; authorization: string }[] = [];
+  const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
+  const provider = createSearchApiLiveProvider({ apiKey: 'searchapi-test-key', maxSearches: 1, maxProperties: 1,
+    fetch: async (input, init) => {
+      const url = new URL(String(input));
+      calls.push({ url, authorization: new Headers(init?.headers).get('authorization') ?? '' });
+      const common = { check_in_date: '2027-02-20', check_out_date: '2027-02-24', currency: 'EUR', adults: 2,
+        children_ages: '4,8' };
+      if (url.searchParams.get('engine') === 'google_hotels') return json({ search_parameters: { ...common, engine: 'google_hotels' },
+        properties: [{ property_token: 'property-token', name: 'Family Hotel', city: 'Rome', country: 'IT',
+          total_price: { extracted_price: 650.50 } }] });
+      if (url.searchParams.get('engine') === 'google_hotels_property') return json({
+        search_parameters: { ...common, engine: 'google_hotels_property' }, property: { property_token: 'property-token',
+          name: 'Family Hotel', country: 'IT', check_in_date: '2027-02-20', check_out_date: '2027-02-24', currency: 'EUR',
+          amenities: ['Breakfast', 'Heated pool'], featured_offers: [], all_offers: [{ source: 'Hotel partner', num_guests: 4,
+            total_price: { extracted_price: 650.50 }, link: 'https://hotel.example/exact-family-rate', has_free_cancellation: true }] } });
+      return json({ error: 'Unexpected engine' });
+    } });
+  const offers = await provider.search!(searchSchema.parse({ ...criteria, targetCities: [], targetAirports: ['FCO'],
+    earliestDeparture: '2027-02-20', latestReturn: '2027-02-24', minNights: 4, maxNights: 4,
+    rooms: 1, tripTypes: ['flight', 'stay'] }), AbortSignal.timeout(5000));
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0]?.type, 'stay');
+  assert.equal(offers[0]?.totalMinor, 65050);
+  assert.equal(offers[0]?.destinationAirport, 'FCO');
+  assert.equal(offers[0]?.booking?.rooms, 1);
+  assert.equal(offers[0]?.swimming, 'heated-pool');
+  assert.deepEqual(calls.map(call => call.url.searchParams.get('engine')), ['google_hotels', 'google_hotels_property']);
+  assert.ok(calls.every(call => call.authorization === 'Bearer searchapi-test-key'));
+  assert.ok(calls.every(call => !call.url.searchParams.has('api_key')));
+  assert.ok(calls.every(call => call.url.searchParams.get('engine') !== 'google_flights'));
+});
+test('SearchAPI declines unsupported hotel occupancies before making a request', async () => {
+  const calls: string[] = [];
+  const provider = createSearchApiLiveProvider({ apiKey: 'searchapi-test-key', fetch: async input => {
+    calls.push(String(input)); return new Response('{}', { headers: { 'content-type': 'application/json' } });
+  } });
+  const base = { ...criteria, tripTypes: ['stay'] as const };
+  assert.deepEqual(await provider.search!(searchSchema.parse({ ...base, rooms: 2 }), AbortSignal.timeout(5000)), []);
+  assert.deepEqual(await provider.search!(searchSchema.parse({ ...base, childrenAges: [0] }), AbortSignal.timeout(5000)), []);
+  assert.deepEqual(await provider.search!(searchSchema.parse({ ...base, adults: 4, childrenAges: [2, 3, 4] }), AbortSignal.timeout(5000)), []);
   assert.deepEqual(calls, []);
 });
 test('Ignav scans all default cities, exact-checks candidates, and retains exact full-trip booking links', async () => {
